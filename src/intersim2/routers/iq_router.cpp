@@ -48,8 +48,8 @@
 #include "buffer_monitor.hpp"
 
 IQRouter::IQRouter( Configuration const & config, Module *parent, 
-		    string const & name, int id, int inputs, int outputs )
-: Router( config, parent, name, id, inputs, outputs ), _active(false)
+		    string const & name, int id, int inputs, int outputs, int channel_speedup )
+: Router( config, parent, name, id, inputs, outputs, channel_speedup ), _active(false)
 {
   _vcs         = config.GetInt( "num_vcs" );
 
@@ -297,21 +297,25 @@ bool IQRouter::_ReceiveFlits( )
 {
   bool activity = false;
   for(int input = 0; input < _inputs; ++input) { 
-    Flit * const f = _input_channels[input]->Receive();
-    if(f) {
+    FlitChannel * channel = _input_channels[input];
+    int bandwidth = channel->GetBandwidth();
+    for (int i = 0; i < bandwidth; ++i) {
+      Flit * const f = channel->Receive();
+      if(f) {
 
 #ifdef TRACK_FLOWS
-      ++_received_flits[f->cl][input];
+        ++_received_flits[f->cl][input];
 #endif
 
-      if(f->watch) {
-	*gWatchOut << GetSimTime() << " | " << FullName() << " | "
-		   << "Received flit " << (unsigned) f->id
-		   << " from channel at input " << input
-		   << "." << endl;
+        if(f->watch) {
+    *gWatchOut << GetSimTime() << " | " << FullName() << " | "
+        << "Received flit " << f->id
+        << " from channel at input " << input
+        << "." << endl;
+        }
+        _in_queue_flits.insert(make_pair(input, f));
+        activity = true;
       }
-      _in_queue_flits.insert(make_pair(input, f));
-      activity = true;
     }
   }
   return activity;
@@ -321,11 +325,15 @@ bool IQRouter::_ReceiveCredits( )
 {
   bool activity = false;
   for(int output = 0; output < _outputs; ++output) {  
-    Credit * const c = _output_credits[output]->Receive();
-    if(c) {
-      _proc_credits.push_back(make_pair(GetSimTime() + _credit_delay, 
-					make_pair(c, output)));
-      activity = true;
+    CreditChannel * channel = _output_credits[output];
+    int bandwidth = channel->GetBandwidth();
+    for (int i = 0; i < bandwidth; ++i) {
+      Credit * const c = _output_credits[output]->Receive();
+      if(c) {
+        _proc_credits.push_back(make_pair(GetSimTime() + _credit_delay, 
+  					make_pair(c, output)));
+        activity = true;
+      }
     }
   }
   return activity;
@@ -2236,27 +2244,31 @@ void IQRouter::_OutputQueuing( )
 // write outputs
 //------------------------------------------------------------------------------
 
+
 void IQRouter::_SendFlits( )
 {
   for ( int output = 0; output < _outputs; ++output ) {
-    if ( !_output_buffer[output].empty( ) ) {
-      Flit * const f = _output_buffer[output].front( );
-      assert(f);
-      _output_buffer[output].pop( );
+    FlitChannel * channel = _output_channels[output];
+    int bandwidth = channel->GetBandwidth();
+    for (int i = 0; i < bandwidth; ++i) {
+      if ( !_output_buffer[output].empty( ) ) {
+        Flit * const f = _output_buffer[output].front( );
+        assert(f);
+        _output_buffer[output].pop( );
 
-#ifdef TRACK_FLOWS
-      ++_sent_flits[f->cl][output];
-#endif
-
-      if(f->watch)
-	*gWatchOut << GetSimTime() << " | " << FullName() << " | "
-		    << "Sending flit " << f->id
-		    << " to channel at output " << output
-		    << "." << endl;
-      if(gTrace) {
-	cout << "Outport " << output << endl << "Stop Mark" << endl;
+  #ifdef TRACK_FLOWS
+        ++_sent_flits[f->cl][output];
+  #endif
+        if(f->watch)
+    *gWatchOut << GetSimTime() << " | " << FullName() << " | "
+          << "Sending flit " << f->id
+          << " to channel at output " << output
+          << "." << endl;
+        if(gTrace) {
+    cout << "Outport " << output << endl << "Stop Mark" << endl;
+        }
+        _output_channels[output]->Send( f );
       }
-      _output_channels[output]->Send( f );
     }
   }
 }
@@ -2264,14 +2276,19 @@ void IQRouter::_SendFlits( )
 void IQRouter::_SendCredits( )
 {
   for ( int input = 0; input < _inputs; ++input ) {
-    if ( !_credit_buffer[input].empty( ) ) {
-      Credit * const c = _credit_buffer[input].front( );
-      assert(c);
-      _credit_buffer[input].pop( );
-      _input_credits[input]->Send( c );
+    CreditChannel * channel = _input_credits[input];
+    int bandwidth = channel->GetBandwidth();
+    for (int i = 0; i < bandwidth; ++i) {
+      if ( !_credit_buffer[input].empty( ) ) {
+        Credit * const c = _credit_buffer[input].front( );
+        assert(c);
+        _credit_buffer[input].pop( );
+        _input_credits[input]->Send( c );
+      }
     }
   }
 }
+
 
 
 //------------------------------------------------------------------------------

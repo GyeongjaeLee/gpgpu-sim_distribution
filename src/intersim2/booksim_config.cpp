@@ -311,6 +311,18 @@ BookSimConfig::BookSimConfig( )
 
   //==================Network file===========================
   AddStrField("network_file","");
+
+  _int_map["l"] = 1;
+  _int_map["shader"] = 144;
+  _int_map["l2slice"] = 80;
+  _int_map["units"] = 144;
+  AddStrField("units", "");
+  _int_map["use_partition"] = 0;
+  
+
+  _int_map["speedups"] = 1;
+  AddStrField("speedups", "");
+  _int_map["interpartition_speedup"] = 1;
 }
 
 

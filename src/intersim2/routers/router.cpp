@@ -56,17 +56,16 @@ int const Router::STALL_BUFFER_RESERVED = -5;
 int const Router::STALL_CROSSBAR_CONFLICT = -6;
 
 Router::Router( const Configuration& config,
-		Module *parent, const string & name, int id,
-		int inputs, int outputs ) :
-TimedModule( parent, name ), _id( id ), _inputs( inputs ), _outputs( outputs ),
-   _partial_internal_cycles(0.0)
+		Module *parent, const string & name, int id, int inputs, int outputs, int channel_speedup ) :
+TimedModule( parent, name ), _id( id ), _inputs( inputs ), _outputs( outputs ), _partial_internal_cycles(0.0),
+   _channel_speedup( channel_speedup )
 {
   _crossbar_delay   = ( config.GetInt( "st_prepare_delay" ) + 
 			config.GetInt( "st_final_delay" ) );
   _credit_delay     = config.GetInt( "credit_delay" );
   _input_speedup    = config.GetInt( "input_speedup" );
   _output_speedup   = config.GetInt( "output_speedup" );
-  _internal_speedup = config.GetFloat( "internal_speedup" );
+  _internal_speedup = config.GetFloat( "internal_speedup" ) * channel_speedup;
   _classes          = config.GetInt( "classes" );
 
 #ifdef TRACK_FLOWS
@@ -127,13 +126,12 @@ bool Router::IsFaultyOutput( int c ) const
 
 /*Router constructor*/
 Router *Router::NewRouter( const Configuration& config,
-			   Module *parent, const string & name, int id,
-			   int inputs, int outputs )
+			   Module *parent, const string & name, int id, int inputs, int outputs, int channel_speedup )
 {
   const string type = config.GetStr( "router" );
   Router *r = NULL;
   if ( type == "iq" ) {
-    r = new IQRouter( config, parent, name, id, inputs, outputs );
+    r = new IQRouter( config, parent, name, id, inputs, outputs, channel_speedup );
   } else if ( type == "event" ) {
     r = new EventRouter( config, parent, name, id, inputs, outputs );
   } else if ( type == "chaos" ) {

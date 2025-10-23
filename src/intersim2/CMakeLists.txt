@@ -61,6 +61,7 @@ list(APPEND intersim_SRC
         networks/fattree.cpp
         networks/flatfly_onchip.cpp
         networks/fly.cpp
+        networks/gpunet.cpp
         networks/kncube.cpp
         networks/network.cpp
         networks/qtree.cpp

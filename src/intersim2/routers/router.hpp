@@ -65,6 +65,8 @@ protected:
 
   int _crossbar_delay;
   int _credit_delay;
+
+  int _channel_speedup;
   
   vector<FlitChannel *>   _input_channels;
   vector<CreditChannel *> _input_credits;
@@ -93,11 +95,11 @@ protected:
 public:
   Router( const Configuration& config,
 	  Module *parent, const string & name, int id,
-	  int inputs, int outputs );
+	  int inputs, int outputs, int channel_speedup = 1 );
 
   static Router *NewRouter( const Configuration& config,
 			    Module *parent, const string & name, int id,
-			    int inputs, int outputs );
+			    int inputs, int outputs, int channel_speedup = 1 );
 
   virtual void AddInputChannel( FlitChannel *channel, CreditChannel *backchannel );
   virtual void AddOutputChannel( FlitChannel *channel, CreditChannel *backchannel );
@@ -119,7 +121,7 @@ public:
   bool IsFaultyOutput( int c ) const;
 
   inline int GetID( ) const {return _id;}
-
+  inline int GetSpeedup( ) const {return _channel_speedup;}
 
   virtual int GetUsedCredit(int o) const = 0;
   virtual int GetBufferOccupancy(int i) const = 0;
