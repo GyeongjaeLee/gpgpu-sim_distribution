@@ -318,7 +318,7 @@ int GPUNet::_GetWireLatency(int l, bool is_interpartition) const
 
   // Adjust latency_increment to make the total latency without partition
   // similar to the average of remote and local access latencies with partition.
-  double s = _use_partition ? 75.0 : 100.0;
+  double s = _use_partition ? 75.0 : 75.0;
   int n = _l + 1;
   double d = 10.0;
   // Ensure d is less than 2S/(n(n-1)) to avoid negative local latency.

@@ -8,6 +8,7 @@
 // Topology
 topology = gpunet;
 l = 3;
+// this must match the sum of n_shader and n_mem in gpgpu_sim.config
 shader = 84;
 l2slice = 32;
 // Assume partitions are uniformly sized

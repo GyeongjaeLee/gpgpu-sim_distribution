@@ -38,6 +38,7 @@
 #define _CHANNEL_HPP
 
 #include <queue>
+#include <deque>
 #include <cassert>
 
 #include "globals.hpp"
@@ -57,7 +58,7 @@ public:
   int GetLatency() const { return _delay ; }
   void SetBandwidth(int bandwidth);
   int GetBandwidth() const { return _bandwidth; }
-  
+
   // Send data 
   virtual void Send(T * data);
   

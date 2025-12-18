@@ -1,7 +1,7 @@
-// $Id: router.hpp 5188 2012-08-30 00:31:31Z dub $
+// $Id$
 
 /*
- Copyright (c) 2007-2012, Trustees of The Leland Stanford Junior University
+ Copyright (c) 2007-2015, Trustees of The Leland Stanford Junior University
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,6 @@
 #define _ROUTER_HPP_
 
 #include <string>
-#include <vector>
 
 #include "timed_module.hpp"
 #include "flit.hpp"
@@ -94,12 +93,10 @@ protected:
 
 public:
   Router( const Configuration& config,
-	  Module *parent, const string & name, int id,
-	  int inputs, int outputs, int channel_speedup = 1 );
+	  Module *parent, const string & name, int id, int inputs, int outputs, int channel_speedup = 1 );
 
   static Router *NewRouter( const Configuration& config,
-			    Module *parent, const string & name, int id,
-			    int inputs, int outputs, int channel_speedup = 1 );
+			    Module *parent, const string & name, int id, int inputs, int outputs, int channel_speedup = 1 );
 
   virtual void AddInputChannel( FlitChannel *channel, CreditChannel *backchannel );
   virtual void AddOutputChannel( FlitChannel *channel, CreditChannel *backchannel );

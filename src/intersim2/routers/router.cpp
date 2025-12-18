@@ -41,6 +41,7 @@
 #include "booksim.hpp"
 #include <iostream>
 #include <cassert>
+#include <vector>
 #include "router.hpp"
 
 //////////////////Sub router types//////////////////////
@@ -65,7 +66,7 @@ TimedModule( parent, name ), _id( id ), _inputs( inputs ), _outputs( outputs ), 
   _credit_delay     = config.GetInt( "credit_delay" );
   _input_speedup    = config.GetInt( "input_speedup" );
   _output_speedup   = config.GetInt( "output_speedup" );
-  _internal_speedup = config.GetFloat( "internal_speedup" ) * channel_speedup;
+  _internal_speedup = config.GetFloat( "internal_speedup" ) * _channel_speedup;
   _classes          = config.GetInt( "classes" );
 
 #ifdef TRACK_FLOWS

@@ -8,16 +8,16 @@ network_count = 2;
 topology = gpunet_multiport;
 
 // Number of shader cores and L2 slices
-shader = 80;
-l2slice = 32;
+shader = 148;
+l2slice = 128;
 
 // Partition configuration
-use_partition = 0;
-n_partition = 1;
+use_partition = 1;
+n_partition = 2;
 
 // Number of parallel interpartition ports (instead of bandwidth increase)
 // This replaces interpartition_speedup from original GPUNet
-interpartition_ports = 54;
+interpartition_ports = 143;
 
 // Latencies (cycles)
 inject_eject_latency = 40;

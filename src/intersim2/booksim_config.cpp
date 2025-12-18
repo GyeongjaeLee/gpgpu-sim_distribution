@@ -318,11 +318,15 @@ BookSimConfig::BookSimConfig( )
   _int_map["units"] = 144;
   AddStrField("units", "");
   _int_map["use_partition"] = 0;
+  _int_map["n_partition"] = 1;
   
 
   _int_map["speedups"] = 1;
   AddStrField("speedups", "");
   _int_map["interpartition_speedup"] = 1;
+  _int_map["interpartition_ports"] = 1;
+  _int_map["inject_eject_latency"] = 40;
+  _int_map["interpartition_latency"] = 50;
 }
 
 
