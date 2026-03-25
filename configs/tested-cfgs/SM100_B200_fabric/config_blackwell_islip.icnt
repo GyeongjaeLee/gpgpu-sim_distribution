@@ -1,0 +1,106 @@
+// GPUNet Multiport Configuration for B200
+use_map = 0;
+flit_size = 40;
+
+network_count = 2;
+
+// Topology
+topology = hbmnet;
+
+// B200 GPU: 148 SMs, 96 L2 slices, 8 HBM stacks
+num_sms = 148;
+num_l2_slices = 256;
+num_hbm_stacks = 8;
+
+// L2 mapping: 0 = sequential (HBM0 gets L2 0..11),
+//             1 = interleaved (HBM0 gets L2 0,8,16,...,88)
+l2_interleave = 0;
+
+// Routing
+// baseline:      deterministic tree routing (SM->Xbar->HBM or HBM->Xbar->HBM)
+// min_oblivious: random minimal, picks uniformly among minimal ports (no congestion info)
+// min_adaptive:  adaptive minimal, direction with lowest avg credit per port, random port within
+// ugal:          adaptive non-minimal, compares minimal vs non-minimal via intermediate
+// valiant:       oblivious non-minimal, always routes via random intermediate HBM
+// hybrid:        probabilistic mix of baseline + one of the above (see baseline_ratio)
+routing_function = baseline;
+
+is_fabric = 0;
+ugal_threshold = 50;
+// UGAL intermediate selection: 0 = random, 1 = least-cost
+ugal_intm_select = 0;
+
+// Hybrid routing: baseline_ratio fraction uses baseline tree routing,
+// the rest uses hybrid_routing (min_adaptive/ugal/valiant/min_oblivious). Requires is_fabric=1.
+baseline_ratio = 0.8;
+hybrid_routing = ugal;
+
+inject_latency = 50;
+eject_latency = 50;
+
+// Link latencies (cycles)
+xbar_xbar_latency = 185;
+xbar_hbm_latency = 10;    // hit path: Xbar ↔ HBM
+xbar_mc_latency = 160;      // miss path: Xbar ↔ MC
+mc_hbm_latency = 80;      // miss path: MC ↔ HBM (models DRAM access)
+mc_mc_latency = 160;         // miss path fabric: MC ↔ MC
+
+// Link bandwidths (parallel ports per link pair)
+xbar_xbar_bandwidth = 70;
+xbar_hbm_bandwidth = 14;   // hit path
+xbar_mc_bandwidth = 14;    // miss path entry
+mc_hbm_bandwidth = 14;     // equal xbar_hbm_bandwidth for fairness
+mc_mc_bandwidth = 14;       // fabric
+
+// Flow control
+num_vcs     = 4;
+vc_buf_size = 512;
+input_buffer_size = 256;
+ejection_buffer_size = 512;
+boundary_buffer_size = 512;
+
+wait_for_tail_credit = 0;
+
+// Router architecture
+router = iq;
+vc_allocator = islip;
+sw_allocator = islip;
+alloc_iters  = 1;
+
+credit_delay   = 0;
+routing_delay  = 0;
+vc_alloc_delay = 1;
+sw_alloc_delay = 1;
+
+input_speedup     = 1;
+output_speedup    = 1;
+internal_speedup  = 2.0;
+
+// Traffic
+traffic = uniform;
+packet_size = 1;
+
+// Simulation
+sim_type = gpgpusim;
+injection_rate = 0.01;
+
+subnets = 2;
+
+latency_thres = 10000.0;
+
+read_request_subnet = 0;
+read_reply_subnet = 1;
+write_request_subnet = 0;
+write_reply_subnet = 1;
+
+read_request_begin_vc = 0;
+read_request_end_vc = 3;
+write_request_begin_vc = 0;
+write_request_end_vc = 3;
+read_reply_begin_vc = 0;
+read_reply_end_vc = 3;
+write_reply_begin_vc = 0;
+write_reply_end_vc = 3;
+
+flit_width_bytes = 40;
+traffic_matrix_file = ./examples/end-to-end/moe_matrix_H2H_k16_128MiB;

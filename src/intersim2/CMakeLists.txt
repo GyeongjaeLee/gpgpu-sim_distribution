@@ -65,6 +65,8 @@ list(APPEND intersim_SRC
         networks/network.cpp
         networks/qtree.cpp
         networks/tree4.cpp
+        networks/hbmnet.cpp
+        networks/hbmnet_accelsim.cpp
         outputset.cpp
         packet_reply_info.cpp
         power/buffer_monitor.cpp

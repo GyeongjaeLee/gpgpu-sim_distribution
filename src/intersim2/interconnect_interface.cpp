@@ -234,7 +234,7 @@ void InterconnectInterface::Advance()
 
 bool InterconnectInterface::Busy() const
 {
-  bool busy = !_traffic_manager->_total_in_flight_flits[0].empty();
+  bool busy = !_traffic_manager->_total_in_flight_flits[0].empty() || Credit::OutStanding()!= 0;
   if (!busy) {
     for (int s = 0; s < _subnets; ++s) {
       for (unsigned n = 0; n < _n_shader+_n_mem; ++n) {

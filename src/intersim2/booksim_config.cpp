@@ -238,7 +238,7 @@ BookSimConfig::BookSimConfig( )
   _int_map["pair_stats"] = 0;
 
   // if avg. latency exceeds the threshold, assume unstable
-  _float_map["latency_thres"] = 500.0;
+  _float_map["latency_thres"] = 300.0;
   AddStrField("latency_thres", ""); // workaround to allow for vector specification
 
    // consider warmed up once relative change in latency / throughput between successive iterations is smaller than this
@@ -311,6 +311,41 @@ BookSimConfig::BookSimConfig( )
 
   //==================Network file===========================
   AddStrField("network_file","");
+
+  //==================HBMNet options====================
+  _int_map["num_sms"] = 148;
+  _int_map["num_l2_slices"] = 256;
+  _int_map["num_hbm_stacks"] = 8;
+  _int_map["l2_interleave"] = 0;
+  _int_map["xbar_xbar_latency"] = 185;
+  _int_map["xbar_hbm_latency"] = 170;
+  _int_map["hbm_hbm_latency"] = 170;
+  _int_map["xbar_xbar_bandwidth"] = 70;
+  _int_map["xbar_hbm_bandwidth"] = 14;
+  _int_map["hbm_hbm_bandwidth"] = 14;
+  _int_map["ugal_threshold"] = 50;
+  _int_map["ugal_intm_select"] = 0; // 0 = random, 1 = least-cost
+  _float_map["baseline_ratio"] = 0.0;
+
+  //==================HBMNet AccelSim options====================
+  // MC router links (miss path: Xbar → MC → HBM)
+  _int_map["xbar_mc_latency"] = 170;
+  _int_map["xbar_mc_bandwidth"] = 14;
+  _int_map["mc_hbm_latency"] = 170;
+  _int_map["mc_hbm_bandwidth"] = 14;  // should equal xbar_hbm_bandwidth for fairness
+  _int_map["mc_mc_latency"] = 170;
+  _int_map["mc_mc_bandwidth"] = 14;
+  // baseline_ratio is repurposed as L2 hit rate in AccelSim mode
+
+  //==================Shared options===========================
+  _int_map["is_fabric"] = 0;
+  _int_map["inject_latency"] = 1;
+  _int_map["eject_latency"] = 1;
+
+  // MoE traffic manager
+  _int_map["flit_width_bytes"] = 40;
+  _str_map["traffic_matrix_file"] = "./examples/moe_matrix.txt";
+  _str_map["hybrid_routing"] = "min_adaptive";
 }
 
 

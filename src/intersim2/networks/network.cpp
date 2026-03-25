@@ -47,7 +47,8 @@
 #include "fattree.hpp"
 #include "anynet.hpp"
 #include "dragonfly.hpp"
-
+#include "hbmnet.hpp"
+#include "hbmnet_accelsim.hpp"
 
 Network::Network( const Configuration &config, const string & name ) :
   TimedModule( 0, name )
@@ -111,6 +112,12 @@ Network * Network::New(const Configuration & config, const string & name)
   } else if ( topo == "dragonflynew"){
     DragonFlyNew::RegisterRoutingFunctions() ;
     n = new DragonFlyNew(config, name);
+  } else if ( topo == "hbmnet"){
+    HBMNet::RegisterRoutingFunctions() ;
+    n = new HBMNet(config, name);
+  } else if ( topo == "hbmnet_accelsim"){
+    HBMNetAccelSim::RegisterRoutingFunctions() ;
+    n = new HBMNetAccelSim(config, name);
   } else {
     cerr << "Unknown topology: " << topo << endl;
   }
