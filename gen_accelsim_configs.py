@@ -87,17 +87,16 @@ STRUCTURES = OrderedDict([
 # Matches experiments.csv columns (Structure | Core | HBM | … | Bandwidth | GPU-GPU | GPU-HBM | HBM-HBM | TSV)
 
 BANDWIDTHS = OrderedDict([
-    # key               gpu_gpu  gpu_hbm  hbm_hbm  tsv
-    ("B100+HBM3e",    {"gpu_gpu": 10,  "gpu_hbm": 1.0,  "hbm_hbm": 1.0,  "tsv": 1.0}),
-    ("B100+HBM4",     {"gpu_gpu": 10,  "gpu_hbm": 2.0,  "hbm_hbm": 2.0,  "tsv": 2.0}),   # HBM3e × 2
-    ("B100+HBM4e",    {"gpu_gpu": 10,  "gpu_hbm": 4.0,  "hbm_hbm": 4.0,  "tsv": 4.0}),
-    ("Shoreline_1x",  {"gpu_gpu": 10,  "gpu_hbm": 3.33, "hbm_hbm": 3.89, "tsv": 3.33}),
-    ("Shoreline_1.5x",{"gpu_gpu": 10,  "gpu_hbm": 3.33, "hbm_hbm": 3.89, "tsv": 5.0}),
-    ("Shoreline_2x",  {"gpu_gpu": 10,  "gpu_hbm": 3.33, "hbm_hbm": 3.89, "tsv": 6.67}),
-    ("G2G_1.5x",      {"gpu_gpu": 15,  "gpu_hbm": 3.33, "hbm_hbm": 3.89, "tsv": 5.0}),
-    ("G2G_1x",        {"gpu_gpu": 10,  "gpu_hbm": 3.33, "hbm_hbm": 3.89, "tsv": 5.0}),
-    ("G2G_0.8x",      {"gpu_gpu": 8,   "gpu_hbm": 3.33, "hbm_hbm": 3.89, "tsv": 5.0}),
-    ("G2G_0.5x",      {"gpu_gpu": 5,   "gpu_hbm": 3.33, "hbm_hbm": 3.89, "tsv": 5.0}),
+    # key                   gpu_gpu  gpu_hbm  hbm_hbm  tsv (mc_hbm, TSV bottleneck)
+    ("B200+HBM3e",        {"gpu_gpu": 5,   "gpu_hbm": 0.5,  "hbm_hbm": 0.5,  "tsv": 0.5}),
+    ("Rubin_Ultra+HBM4",  {"gpu_gpu": 5,   "gpu_hbm": 1.0,  "hbm_hbm": 1.0,  "tsv": 1.0}),
+    ("Shoreline_1x",      {"gpu_gpu": 5,   "gpu_hbm": 1.67, "hbm_hbm": 1.95, "tsv": 1.67}),
+    ("Shoreline_1.5x",    {"gpu_gpu": 5,   "gpu_hbm": 1.67, "hbm_hbm": 1.95, "tsv": 2.51}),
+    ("Shoreline_2x",      {"gpu_gpu": 5,   "gpu_hbm": 1.67, "hbm_hbm": 1.95, "tsv": 3.34}),
+    ("G2G_1.5x",          {"gpu_gpu": 7.5, "gpu_hbm": 1.67, "hbm_hbm": 1.95, "tsv": 2.51}),
+    ("G2G_1x",            {"gpu_gpu": 5,   "gpu_hbm": 1.67, "hbm_hbm": 1.95, "tsv": 2.51}),
+    ("G2G_0.8x",          {"gpu_gpu": 4,   "gpu_hbm": 1.67, "hbm_hbm": 1.95, "tsv": 2.51}),
+    ("G2G_0.5x",          {"gpu_gpu": 2.5, "gpu_hbm": 1.67, "hbm_hbm": 1.95, "tsv": 2.51}),
 ])
 
 # ── Routing ───────────────────────────────────────────────────────────────────

@@ -62,7 +62,7 @@ mc_mc_bandwidth = 7;       // fabric
 
 // Flow control
 num_vcs     = 4;
-vc_buf_size = 32;
+vc_buf_size = 64;
 input_buffer_size = 512;
 ejection_buffer_size = 512;
 boundary_buffer_size = 512;
