@@ -45,6 +45,7 @@
 #include "intersim_config.hpp"
 #include "network.hpp"
 #include "trace.h"
+#include "networks/hbmnet_accelsim.hpp"
 
 InterconnectInterface* InterconnectInterface::New(const char* const config_file)
 {
@@ -142,6 +143,11 @@ void InterconnectInterface::Init()
   _traffic_manager->Init();
   // TODO: Should we init _round_robin_turn?
   //       _boundary_buffer, _ejection_buffer and _ejected_flit_queue should be cleared
+
+  // Reset HBM network statistics per kernel
+  if (_icnt_config->GetStr("topology") == "hbmnet_accelsim") {
+    hbmnet_accelsim_reset_stats();
+  }
 }
 
 void InterconnectInterface::Push(unsigned input_deviceID, unsigned output_deviceID, void *data, unsigned int size)
@@ -206,9 +212,10 @@ void* InterconnectInterface::Pop(unsigned deviceID)
 
   void* data = NULL;
 
-  // 0-_n_shader-1 indicates reply(network 1), otherwise request(network 0)
+  // With subnets=2: SM pops from subnet 1 (replies), memory pops from subnet 0 (requests)
+  // With subnets=1: all traffic shares subnet 0 (requests and replies compete on same fabric)
   int subnet = 0;
-  if (deviceID < _n_shader)
+  if (_subnets > 1 && deviceID < _n_shader)
     subnet = 1;
 
   int turn = _round_robin_turn[subnet][icntID];
@@ -289,6 +296,10 @@ void InterconnectInterface::DisplayOverallStats() const
   // hack: also _total_sims equals to number of kernel calls
   _traffic_manager->_total_sims += 1;
 
+  // Print HBM network link utilization and routing statistics
+  if (_icnt_config->GetStr("topology") == "hbmnet_accelsim") {
+    hbmnet_accelsim_print_link_stats();
+  }
   _traffic_manager->_UpdateOverallStats();
   _traffic_manager->DisplayOverallStats();
   if(_traffic_manager->_print_csv_results) {

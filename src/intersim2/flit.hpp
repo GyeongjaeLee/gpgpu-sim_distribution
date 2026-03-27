@@ -77,6 +77,11 @@ public:
   // phase in multi-phase algorithms
   mutable int ph;
 
+  // Near-min adaptive routing: remaining hop budget (separate from ph)
+  mutable int nm_budget;
+  // Near-min adaptive routing: true if at least one near-min hop was taken
+  mutable bool nm_used;
+
   // Fields for arbitrary data
   void* data ;
 

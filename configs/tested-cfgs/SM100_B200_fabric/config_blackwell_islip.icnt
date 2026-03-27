@@ -4,65 +4,72 @@ flit_size = 40;
 
 network_count = 2;
 
-// Topology
-topology = hbmnet;
+// AccelSim HBMNet Topology
+// Models L2-HBM path: hit (Xbar→HBM) vs miss (Xbar→MC→HBM)
+topology = hbmnet_accelsim;
 
-// B200 GPU: 148 SMs, 96 L2 slices, 8 HBM stacks
+// Hardware: 148 SMs, 256 L2 slices
+// Topology: P Xbars in a chain, H HBM stacks per side per Xbar
+// Total HBM stacks K = P * H * 2
+// num_sms must be a multiple of num_xbars
+// num_l2_slices must be a multiple of K
 num_sms = 148;
 num_l2_slices = 256;
-num_hbm_stacks = 8;
-
-// L2 mapping: 0 = sequential (HBM0 gets L2 0..11),
-//             1 = interleaved (HBM0 gets L2 0,8,16,...,88)
+num_xbars = 2;        // P: number of Xbar routers (e.g. 1, 2, 4)
+hbm_per_side = 2;     // H: HBM stacks per side per Xbar (e.g. 1, 2, 3)
+// K = 2 * 2 * 2 = 8 total HBM stacks
 l2_interleave = 0;
 
 // Routing
-// baseline:      deterministic tree routing (SM->Xbar->HBM or HBM->Xbar->HBM)
-// min_oblivious: random minimal, picks uniformly among minimal ports (no congestion info)
-// min_adaptive:  adaptive minimal, direction with lowest avg credit per port, random port within
-// ugal:          adaptive non-minimal, compares minimal vs non-minimal via intermediate
-// valiant:       oblivious non-minimal, always routes via random intermediate HBM
-// hybrid:        probabilistic mix of baseline + one of the above (see baseline_ratio)
+// All routing functions decide hit/miss at injection based on baseline_ratio (hit rate).
+// Hit flits: Xbar → HBM (direct)
+// Miss flits: Xbar → MC → (MC fabric if available) → HBM
 routing_function = baseline;
 
 is_fabric = 0;
 ugal_threshold = 50;
-// UGAL intermediate selection: 0 = random, 1 = least-cost
 ugal_intm_select = 0;
 
-// Hybrid routing: baseline_ratio fraction uses baseline tree routing,
-// the rest uses hybrid_routing (min_adaptive/ugal/valiant/min_oblivious). Requires is_fabric=1.
-baseline_ratio = 0.8;
-hybrid_routing = ugal;
+// Hit rate: fraction of flits that take the hit path (Xbar→HBM direct)
+// 0.0 = all miss (all go through MC), 1.0 = all hit (no MC involvement)
+baseline_ratio = 0.2;
+// Miss routing sub-function for hybrid: baseline/min_adaptive/near_min_adaptive/ugal/valiant/min_oblivious
+hybrid_routing = near_min_adaptive;
+
+// Near-min adaptive: max extra hops beyond minimum (k=1 allows one MC-MC detour)
+near_min_k = 1;
+
+// Near-min penalty multiplier: scales the latency penalty for near-min directions.
+// 0.0 = no penalty (always pick least congested), 1.0 = default, >1.0 = more conservative
+near_min_penalty = 1.0;
 
 inject_latency = 50;
 eject_latency = 50;
 
 // Link latencies (cycles)
 xbar_xbar_latency = 185;
-xbar_hbm_latency = 10;    // hit path: Xbar ↔ HBM
-xbar_mc_latency = 160;      // miss path: Xbar ↔ MC
-mc_hbm_latency = 80;      // miss path: MC ↔ HBM (models DRAM access)
-mc_mc_latency = 160;         // miss path fabric: MC ↔ MC
+xbar_hbm_latency = 30;    // hit path: Xbar ↔ HBM
+xbar_mc_latency = 115;      // miss path: Xbar ↔ MC
+mc_hbm_latency = 35;      // miss path: MC ↔ HBM (models DRAM access)
+mc_mc_latency = 85;         // miss path fabric: MC ↔ MC
 
 // Link bandwidths (parallel ports per link pair)
 xbar_xbar_bandwidth = 70;
-xbar_hbm_bandwidth = 14;   // hit path
-xbar_mc_bandwidth = 14;    // miss path entry
-mc_hbm_bandwidth = 14;     // equal xbar_hbm_bandwidth for fairness
-mc_mc_bandwidth = 14;       // fabric
+xbar_hbm_bandwidth = 7;   // hit path
+xbar_mc_bandwidth = 7;    // miss path entry
+mc_hbm_bandwidth = 7;     // equal xbar_hbm_bandwidth for fairness
+mc_mc_bandwidth = 7;       // fabric
 
 // Flow control
 num_vcs     = 4;
-vc_buf_size = 512;
-input_buffer_size = 256;
+vc_buf_size = 32;
+input_buffer_size = 512;
 ejection_buffer_size = 512;
 boundary_buffer_size = 512;
 
 wait_for_tail_credit = 0;
 
 // Router architecture
-router = iq;
 vc_allocator = islip;
 sw_allocator = islip;
 alloc_iters  = 1;
@@ -75,23 +82,27 @@ sw_alloc_delay = 1;
 input_speedup     = 1;
 output_speedup    = 1;
 internal_speedup  = 2.0;
+// HBM router internal speedup override (0.0 = use global internal_speedup)
+// Set > 0 to give HBM routers a faster crossbar so mc_hbm_bandwidth (TSV) is the bottleneck.
+hbm_internal_speedup = 0.0;
 
 // Traffic
 traffic = uniform;
-packet_size = 1;
+packet_size ={{1,2,3,4},{10,20}};
+packet_size_rate={{1,1,1,1},{2,1}};
 
 // Simulation
 sim_type = gpgpusim;
 injection_rate = 0.01;
 
-subnets = 2;
+subnets = 1;
 
 latency_thres = 10000.0;
 
 read_request_subnet = 0;
-read_reply_subnet = 1;
+read_reply_subnet = 0;
 write_request_subnet = 0;
-write_reply_subnet = 1;
+write_reply_subnet = 0;
 
 read_request_begin_vc = 0;
 read_request_end_vc = 3;

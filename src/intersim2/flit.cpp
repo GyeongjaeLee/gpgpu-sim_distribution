@@ -80,6 +80,8 @@ void Flit::Reset()
   intm =-1;
   ph = -1;
   data = 0;
+  nm_budget = 0;
+  nm_used = false;
 }  
 
 Flit * Flit::New() {

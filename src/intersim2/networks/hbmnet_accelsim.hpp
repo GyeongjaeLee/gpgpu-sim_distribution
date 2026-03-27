@@ -22,18 +22,22 @@ using namespace std;
 //    Node 0..N-1       : SM nodes
 //    Node N..N+M-1     : L2 slice nodes
 //
+//  Config parameters:
+//    num_xbars (P)     : number of Xbar routers (e.g. 1, 2, 4)
+//    hbm_per_side (H)  : HBM stacks per side per Xbar (e.g. 1, 2, 3)
+//    K = P * H * 2     : total HBM stacks
+//
 //  Router layout:
-//    Router 0           : Crossbar 0 (partition 0)
-//    Router 1           : Crossbar 1 (partition 1)
-//    Router 2..K+1      : MC routers 0..K-1 (Memory Controllers)
-//    Router K+2..2K+1   : HBM routers 0..K-1
+//    Router 0..P-1       : Crossbar 0..P-1
+//    Router P..P+K-1     : MC routers 0..K-1 (Memory Controllers)
+//    Router P+K..P+2K-1  : HBM routers 0..K-1
 //
 //  Links:
 //    Xbar ↔ HBM   : hit path (direct L2 cache hit)
 //    Xbar ↔ MC    : miss path entry (L2 cache miss)
 //    MC   ↔ HBM   : miss path local (1-to-1, MC_h ↔ HBM_h)
 //    MC   ↔ MC    : fabric links (vertical, only when is_fabric=1)
-//    Xbar ↔ Xbar  : inter-partition
+//    Xbar ↔ Xbar  : linear chain (Xbar_p ↔ Xbar_{p+1})
 //
 //  Hit rate (baseline_ratio config) determines the fraction of flits
 //  that take the direct Xbar→HBM path vs the Xbar→MC→HBM path.
@@ -41,9 +45,9 @@ using namespace std;
 //  Bandwidth constraint: xbar_hbm_bw == mc_hbm_bw for fair
 //  processing of hit/miss flits at HBM routers.
 //
-//  2D physical layout (same as HBMNet):
+//  2D physical layout:
 //    Column 0: indices 0..K/2-1,  Column 1: indices K/2..K-1
-//    Partition 0: rows 0..K/4-1,  Partition 1: rows K/4..K/2-1
+//    Each Xbar p owns rows p*H..(p+1)*H-1 in each column.
 //    MC fabric links are vertical (same column, adjacent rows).
 // ============================================================
 
@@ -77,8 +81,10 @@ extern vector<vector<int>> gHBMNetAccelDistMissFabric;
 extern vector<int> gHBMNetAccelRouterConc;
 extern vector<int> gHBMNetAccelRouterFirstNode;
 
-// Cached K (num_hbm_stacks) for routing helpers
-extern int gHBMNetAccelK;
+// Cached topology parameters for routing helpers
+extern int gHBMNetAccelK;    // total HBM stacks
+extern int gHBMNetAccelP;    // number of Xbars
+extern int gHBMNetAccelHPS;  // hbm_per_side
 
 // UGAL routing decision counters
 extern long long gAccelUGALMinDecisions;
@@ -88,15 +94,31 @@ extern long long gAccelUGALNonMinDecisions;
 extern long long gAccelEscapeVCEjects;
 extern long long gAccelTotalEjects;
 
+// Near-min adaptive decision counters
+extern long long gAccelNearMinMinDecisions;
+extern long long gAccelNearMinNonMinDecisions;
+
+// Near-min path-level tracking
+extern long long gAccelNearMinPathsUsed;   // packets that took near-min at least once
+extern long long gAccelTotalMissPackets;    // total miss packets (denominator)
+
+// Per-link-type traversal counters (indexed by AccelLinkType)
+extern long long gAccelLinkTypeTraversals[5];
+
 // Reset all routing statistics
 void hbmnet_accelsim_reset_stats();
+
+// Print link utilization and near-min direction stats
+void hbmnet_accelsim_print_link_stats();
 
 class HBMNetAccelSim : public Network {
 
 private:
   int _num_sms;
   int _num_l2_slices;
-  int _num_hbm_stacks;    // K
+  int _num_xbars;         // P
+  int _hbm_per_side;      // H (HBM stacks per side per Xbar)
+  int _num_hbm_stacks;    // K = P * H * 2
   int _l2_per_hbm;        // L = M / K
   int _l2_interleave;
   int _is_fabric;
@@ -119,7 +141,7 @@ private:
 
   int _HBMPartition(int hbm_idx) const {
     int row = hbm_idx % (_num_hbm_stacks / 2);
-    return (row < _num_hbm_stacks / 4) ? 0 : 1;
+    return row / _hbm_per_side;
   }
 
 public:
@@ -129,20 +151,10 @@ public:
 };
 
 // Routing functions
+// is_fabric=0: baseline (deterministic miss path)
+// is_fabric=1: hybrid  (hit/miss split; miss sub-routing via hybrid_routing config)
 void hbmnet_accelsim_baseline( const Router *r, const Flit *f, int in_channel,
                                 OutputSet *outputs, bool inject );
-
-void hbmnet_accelsim_min_adaptive( const Router *r, const Flit *f, int in_channel,
-                                    OutputSet *outputs, bool inject );
-
-void hbmnet_accelsim_min_oblivious( const Router *r, const Flit *f, int in_channel,
-                                     OutputSet *outputs, bool inject );
-
-void hbmnet_accelsim_ugal( const Router *r, const Flit *f, int in_channel,
-                            OutputSet *outputs, bool inject );
-
-void hbmnet_accelsim_valiant( const Router *r, const Flit *f, int in_channel,
-                               OutputSet *outputs, bool inject );
 
 void hbmnet_accelsim_hybrid( const Router *r, const Flit *f, int in_channel,
                               OutputSet *outputs, bool inject );
