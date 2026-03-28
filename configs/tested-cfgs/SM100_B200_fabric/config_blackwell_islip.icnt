@@ -2,22 +2,20 @@
 use_map = 0;
 flit_size = 40;
 
-network_count = 2;
+network_count = 1;
 
 // AccelSim HBMNet Topology
 // Models L2-HBM path: hit (Xbar→HBM) vs miss (Xbar→MC→HBM)
 topology = hbmnet_accelsim;
 
-// Hardware: 148 SMs, 256 L2 slices
 // Topology: P Xbars in a chain, H HBM stacks per side per Xbar
 // Total HBM stacks K = P * H * 2
-// num_sms must be a multiple of num_xbars
-// num_l2_slices must be a multiple of K
-num_sms = 148;
-num_l2_slices = 256;
+// Derived: num_sms = sm_per_xbar * P,  num_l2_slices = l2_per_hbm * K
+sm_per_xbar = 74;     // SMs per Xbar (concentration)
 num_xbars = 2;        // P: number of Xbar routers (e.g. 1, 2, 4)
 hbm_per_side = 2;     // H: HBM stacks per side per Xbar (e.g. 1, 2, 3)
-// K = 2 * 2 * 2 = 8 total HBM stacks
+l2_per_hbm = 32;      // L2 slices per HBM stack
+// P=2, H=2 → K=8, num_sms=148, num_l2=256
 l2_interleave = 0;
 
 // Routing
@@ -62,7 +60,7 @@ mc_mc_bandwidth = 7;       // fabric
 
 // Flow control
 num_vcs     = 4;
-vc_buf_size = 64;
+vc_buf_size = 128;
 input_buffer_size = 512;
 ejection_buffer_size = 512;
 boundary_buffer_size = 512;

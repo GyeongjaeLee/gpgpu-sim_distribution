@@ -82,9 +82,10 @@ extern vector<int> gHBMNetAccelRouterConc;
 extern vector<int> gHBMNetAccelRouterFirstNode;
 
 // Cached topology parameters for routing helpers
-extern int gHBMNetAccelK;    // total HBM stacks
-extern int gHBMNetAccelP;    // number of Xbars
-extern int gHBMNetAccelHPS;  // hbm_per_side
+extern int gHBMNetAccelK;          // total HBM stacks
+extern int gHBMNetAccelP;          // number of Xbars
+extern int gHBMNetAccelHPS;        // hbm_per_side
+extern int gHBMNetAccelSMPerXbar;  // SMs per Xbar (concentration)
 
 // UGAL routing decision counters
 extern long long gAccelUGALMinDecisions;
@@ -119,7 +120,8 @@ private:
   int _num_xbars;         // P
   int _hbm_per_side;      // H (HBM stacks per side per Xbar)
   int _num_hbm_stacks;    // K = P * H * 2
-  int _l2_per_hbm;        // L = M / K
+  int _sm_per_xbar;       // SMs per Xbar (concentration); num_sms = _sm_per_xbar * P
+  int _l2_per_hbm;        // L2 slices per HBM stack; num_l2_slices = _l2_per_hbm * K
   int _l2_interleave;
   int _is_fabric;
 

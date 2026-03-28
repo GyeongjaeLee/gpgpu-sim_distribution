@@ -238,7 +238,7 @@ BookSimConfig::BookSimConfig( )
   _int_map["pair_stats"] = 0;
 
   // if avg. latency exceeds the threshold, assume unstable
-  _float_map["latency_thres"] = 300.0;
+  _float_map["latency_thres"] = 7000.0;
   AddStrField("latency_thres", ""); // workaround to allow for vector specification
 
    // consider warmed up once relative change in latency / throughput between successive iterations is smaller than this
@@ -313,8 +313,8 @@ BookSimConfig::BookSimConfig( )
   AddStrField("network_file","");
 
   //==================HBMNet options====================
-  _int_map["num_sms"] = 148;
-  _int_map["num_l2_slices"] = 256;
+  _int_map["sm_per_xbar"] = 74;   // SMs per Xbar; num_sms = sm_per_xbar * num_xbars
+  _int_map["l2_per_hbm"] = 32;    // L2 slices per HBM stack; num_l2 = l2_per_hbm * K
   _int_map["num_hbm_stacks"] = 8;
   _int_map["l2_interleave"] = 0;
   _int_map["xbar_xbar_latency"] = 185;

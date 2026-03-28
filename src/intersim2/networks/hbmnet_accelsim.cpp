@@ -23,6 +23,7 @@ vector<int> gHBMNetAccelRouterFirstNode;
 int gHBMNetAccelK = 0;
 int gHBMNetAccelP = 0;
 int gHBMNetAccelHPS = 0;
+int gHBMNetAccelSMPerXbar = 0;
 
 // Reverse mapping: node -> router, node -> port
 static vector<int> gAccelNodeToRouter;
@@ -340,12 +341,15 @@ HBMNetAccelSim::HBMNetAccelSim( const Configuration &config, const string & name
 // ============================================================
 void HBMNetAccelSim::_ComputeSize( const Configuration &config )
 {
-  _num_sms        = config.GetInt("num_sms");
-  _num_l2_slices  = config.GetInt("num_l2_slices");
   _num_xbars      = config.GetInt("num_xbars");
   _hbm_per_side   = config.GetInt("hbm_per_side");
   _num_hbm_stacks = _num_xbars * _hbm_per_side * 2;
-  _l2_per_hbm     = _num_l2_slices / _num_hbm_stacks;
+
+  _sm_per_xbar    = config.GetInt("sm_per_xbar");
+  _num_sms        = _sm_per_xbar * _num_xbars;
+
+  _l2_per_hbm     = config.GetInt("l2_per_hbm");
+  _num_l2_slices  = _num_hbm_stacks * _l2_per_hbm;
   _l2_interleave  = config.GetInt("l2_interleave");
   _is_fabric      = config.GetInt("is_fabric");
 
@@ -354,8 +358,7 @@ void HBMNetAccelSim::_ComputeSize( const Configuration &config )
 
   assert(P >= 1);
   assert(_hbm_per_side >= 1);
-  assert(_num_sms % P == 0 && "num_sms must be a multiple of num_xbars");
-  assert(_num_l2_slices % K == 0 && "num_l2_slices must be a multiple of num_hbm_stacks");
+  assert(_sm_per_xbar >= 1);
 
   _xbar_xbar_latency   = config.GetInt("xbar_xbar_latency");
   _xbar_hbm_latency    = config.GetInt("xbar_hbm_latency");
@@ -369,9 +372,10 @@ void HBMNetAccelSim::_ComputeSize( const Configuration &config )
   _mc_mc_bandwidth     = config.GetInt("mc_mc_bandwidth");
 
   // Cache for routing
-  gHBMNetAccelK      = K;
-  gHBMNetAccelP      = P;
-  gHBMNetAccelHPS    = _hbm_per_side;
+  gHBMNetAccelK         = K;
+  gHBMNetAccelP         = P;
+  gHBMNetAccelHPS       = _hbm_per_side;
+  gHBMNetAccelSMPerXbar = _sm_per_xbar;
   gAccelNumSMs       = _num_sms;
   gAccelNumL2        = _num_l2_slices;
   gAccelL            = _l2_per_hbm;
@@ -407,11 +411,10 @@ void HBMNetAccelSim::_ComputeSize( const Configuration &config )
   gHBMNetAccelRouterConc.resize(_size);
   gHBMNetAccelRouterFirstNode.resize(_size);
 
-  // Xbar p: SM nodes [p*N/P .. (p+1)*N/P - 1]
-  int sms_per_xbar = _num_sms / P;
+  // Xbar p: SM nodes [p*sm_per_xbar .. (p+1)*sm_per_xbar - 1]
   for (int p = 0; p < P; p++) {
-    gHBMNetAccelRouterConc[p] = sms_per_xbar;
-    gHBMNetAccelRouterFirstNode[p] = p * sms_per_xbar;
+    gHBMNetAccelRouterConc[p] = _sm_per_xbar;
+    gHBMNetAccelRouterFirstNode[p] = p * _sm_per_xbar;
   }
 
   // MC routers: no nodes attached (pure transit)
@@ -457,6 +460,7 @@ void HBMNetAccelSim::_ComputeSize( const Configuration &config )
   _channels = xbar_xbar_ch + xbar_hbm_ch + xbar_mc_ch + mc_hbm_ch + mc_mc_ch;
 
   cout << "HBMNetAccelSim Config:"
+       << " sm_per_xbar=" << _sm_per_xbar
        << " num_sms=" << _num_sms
        << " num_l2=" << _num_l2_slices
        << " P=" << P
