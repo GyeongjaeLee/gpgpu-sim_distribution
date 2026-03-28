@@ -1,0 +1,13 @@
+﻿Benchmark	Hit_rate
+rodinia-3.1:bfs-rodinia-3.1	0.77
+rodinia-3.1:nn-rodinia-3.1	
+rodinia-3.1:pathfinder-rodinia-3.1	
+rodinia-3.1:lavaMD-rodinia-3.1	
+polybench:polybench-gemm	
+polybench:polybench-gesummv	
+polybench:polybench-2DConvolution	
+polybench:polybench-3DConvolution	
+Deepbench_nvidia_tencore:conv_bench-tencore	
+Deepbench_nvidia_tencore:gemm_bench-tencore	0.78
+Deepbench_nvidia_tencore:rnn_bench-tencore	
+GPU_Microbenchmark:mem_bw	0
