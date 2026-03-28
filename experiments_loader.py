@@ -24,7 +24,84 @@ Rules:
 
 import csv
 import os
+import re as _re
 from collections import OrderedDict
+
+
+# ── Abbreviation tables (shared by all run/parse/plot scripts) ────────────────
+
+STRUCT_ABBREV = {
+    "B100_Local":        "BL",
+    "H100":              "H1",
+    "B100_Global":       "BG",
+    "B100_Core_Rotate":  "BCR",
+    "Rubin_Ultra":       "RU",
+}
+
+BW_ABBREV = {
+    "B200+HBM3e":       "H3",
+    "Rubin_Ultra+HBM4": "H4",
+    "Shoreline_1x":     "S1",
+    "Shoreline_1.5x":   "S15",
+    "Shoreline_2x":     "S2",
+    "G2G_1.5x":         "G15",
+    "G2G_1x":           "G1",
+    "G2G_0.8x":         "G08",
+    "G2G_0.5x":         "G05",
+}
+
+ROUTING_ABBREV = {
+    "baseline":      "bas",
+    "min_oblivious": "mino",
+    "min_adaptive":  "mina",
+    "ugal":          "ug",
+    "valiant":       "val",
+}
+
+
+def bench_abbrev(benchmark: str) -> str:
+    """
+    Extract the distinctive part of a benchmark spec by removing
+    tokens shared with the group name.
+
+    "rodinia-3.1:bfs-rodinia-3.1"                 → "bfs"
+    "polybench:polybench-gemm"                    → "gemm"
+    "Deepbench_nvidia_tencore:gemm_bench-tencore" → "gemm_bench"
+    "GPU_Microbenchmark:mem_bw"                   → "mem_bw"
+    """
+    if ':' not in benchmark:
+        return benchmark
+    group, app = benchmark.split(':', 1)
+    group_tokens = set(_re.split(r'[-_.]', group.lower()))
+    app_parts = _re.split(r'[-_.]', app)
+    kept = [p for p in app_parts
+            if p.lower() not in group_tokens and not _re.match(r'^\d+$', p)]
+    return '_'.join(kept) if kept else app
+
+
+def route_abbrev(rk: str) -> str:
+    """Abbreviate a routing key (including near_min_pX.X variants)."""
+    if rk in ROUTING_ABBREV:
+        return ROUTING_ABBREV[rk]
+    m = _re.match(r"near_min_p([\d.]+)", rk)
+    if m:
+        return "nm" + m.group(1).replace(".", "")
+    return rk[:5]
+
+
+def make_csv_prefix(benchmark: str, structures: list,
+                    bandwidths: list, routing_keys: list) -> str:
+    """
+    Build an auto-generated CSV output prefix from option abbreviations.
+
+    "rodinia-3.1:bfs-rodinia-3.1", ["B100_Global"], ["B200+HBM3e"], ["baseline"]
+    → "bfs_BG_H3_bas"
+    """
+    ba  = bench_abbrev(benchmark)
+    sa  = '+'.join(STRUCT_ABBREV.get(s, s[:3]) for s in structures)
+    bwa = '+'.join(BW_ABBREV.get(b, b[:3])     for b in bandwidths)
+    ra  = '+'.join(route_abbrev(rk)             for rk in routing_keys)
+    return f"{ba}_{sa}_{bwa}_{ra}"
 
 
 def load_experiments(csv_path: str = None):
