@@ -70,3 +70,4 @@ setup
 .DS_Store
 .DS_store
 __pycache__/
+/results*/
