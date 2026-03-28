@@ -1,17 +1,17 @@
-Structure	Core	HBM	
-B100 Local	1	4		
-H100	1	6		
-B100 Global	2	8		
-B100 Core Rotate	2	12		
-Rubin Ultra	4	16		
-				
-Bandwidth	GPU-to-GPU	GPU-to-HBM	HBM-to-HBM	TSV
-B200+HBM3e	5	0.5	0.5	0.5
-Rubin Ultra+HBM4	5	1	1	1
-Shoreline ratio (TSV 1x)	5	1.67	1.95	1.67
-Shoreline ratio (TSV 1.5x)	5	1.67	1.95	2.51
-Shoreline ratio (TSV 2x)	5	1.67	1.95	3.34
-G2G BW class variation (1.5x)	7.5	1.67	1.95	2.51
-G2G BW class variation (1x)	5	1.67	1.95	2.51
-G2G BW class variation (0.8x)	4	1.67	1.95	2.51
-G2G BW class variation (0.5x)	2.5	1.67	1.95	2.51
+Structure	Core	HBM	SM_per_Xbar		
+B100_Local	1	4	74		
+H100	1	6	132		
+B100_Global	2	8	74		
+B100_Core_Rotate	2	12	74		
+Rubin_Ultra	4	16	112		
+					
+Bandwidth	GPU-to-GPU	GPU-to-HBM	HBM-to-HBM	TSV	L2_per_HBM
+B200+HBM3e	10	1	1	1	32
+Rubin_Ultra+HBM4	10	2	2	2	64
+Shoreline_1x	10	3.33	3.89	3.33	64
+Shoreline_1.5x	10	3.33	3.89	5	64
+Shoreline_2x	10	3.33	3.89	6.67	64
+G2G_1.5x	15	3.33	3.89	5	64
+G2G_1x	10	3.33	3.89	5	64
+G2G_0.8x	8	3.33	3.89	5	64
+G2G_0.5x	5	3.33	3.89	5	64
