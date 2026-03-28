@@ -5,15 +5,37 @@ Run AccelSim trace-based simulations for HBMNet experiments.
 For each (structure × bandwidth × routing) combination:
   1. Reads the hit rate for the given benchmark from hitrate.csv
   2. Patches baseline_ratio in the generated .icnt config
+     (config must already exist — run gen_accelsim_configs.py first)
   3. Runs run_simulations.py sequentially (one at a time)
   4. Retries once on failure
 
-Usage example:
+Job names are auto-abbreviated, e.g.:
+  B100_Global + B200+HBM3e + near_min_p0.0 + bfs  →  "BGH3nm0_bfs"
+
+Usage examples:
+
+  # Single structure/bandwidth, multiple routings
   python run_accelsim.py \\
       --benchmark rodinia-3.1:bfs-rodinia-3.1 \\
       --structure B100_Global \\
       --bandwidth B200+HBM3e \\
-      --routing baseline min_adaptive
+      --routing baseline min_adaptive near_min_adaptive \\
+      --near-min-p 0.0 1.0
+
+  # Multiple structures and bandwidths
+  python run_accelsim.py \\
+      --benchmark polybench:polybench-gemm \\
+      --structure B100_Local B100_Global H100 \\
+      --bandwidth B200+HBM3e Shoreline_1x \\
+      --routing baseline near_min_adaptive \\
+      --near-min-p 0.0
+
+  # All configs from experiments.csv (dry-run to preview)
+  python run_accelsim.py \\
+      --benchmark GPU_Microbenchmark:mem_bw \\
+      --all-configs \\
+      --routing baseline \\
+      --dry-run
 """
 
 import argparse
@@ -24,7 +46,9 @@ import subprocess
 import sys
 from typing import Optional
 
-from experiments_loader import load_experiments
+from experiments_loader import (load_experiments,
+                                STRUCT_ABBREV, BW_ABBREV, ROUTING_ABBREV,
+                                bench_abbrev, route_abbrev)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _HERE          = os.path.dirname(os.path.abspath(__file__))
@@ -42,36 +66,6 @@ ROUTING_CHOICES = [
     "near_min_adaptive", "ugal", "valiant",
 ]
 
-# ── Abbreviation tables (for -N job name) ─────────────────────────────────────
-STRUCT_ABBREV = {
-    "B100_Local":        "BL",
-    "H100":              "H1",
-    "B100_Global":       "BG",
-    "B100_Core_Rotate":  "BCR",
-    "Rubin_Ultra":       "RU",
-}
-
-BW_ABBREV = {
-    "B200+HBM3e":       "H3",
-    "Rubin_Ultra+HBM4": "H4",
-    "Shoreline_1x":     "S1",
-    "Shoreline_1.5x":   "S15",
-    "Shoreline_2x":     "S2",
-    "G2G_1.5x":         "G15",
-    "G2G_1x":           "G1",
-    "G2G_0.8x":         "G08",
-    "G2G_0.5x":         "G05",
-}
-
-ROUTING_ABBREV = {
-    "baseline":      "bas",
-    "min_oblivious": "mino",
-    "min_adaptive":  "mina",
-    "ugal":          "ug",
-    "valiant":       "val",
-}
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def routing_to_key(routing: str, near_min_p: Optional[float] = None) -> str:
@@ -81,22 +75,12 @@ def routing_to_key(routing: str, near_min_p: Optional[float] = None) -> str:
     return routing
 
 
-def route_abbrev(rk: str) -> str:
-    if rk in ROUTING_ABBREV:
-        return ROUTING_ABBREV[rk]
-    m = re.match(r"near_min_p([\d.]+)", rk)
-    if m:
-        return "nm" + m.group(1).replace(".", "")
-    return rk[:4]
-
-
 def job_name(struct: str, bw: str, rk: str, bench: str) -> str:
-    """Build a short job name for -N: {struct_abbrev}{bw_abbrev}{route_abbrev}_{app}."""
-    sa = STRUCT_ABBREV.get(struct, struct[:3])
-    ba = BW_ABBREV.get(bw, bw[:3])
-    ra = route_abbrev(rk)
-    # bench is like "rodinia-3.1:bfs-rodinia-3.1" — use part after ':'
-    app = bench.split(":")[-1] if ":" in bench else bench
+    """Build a short job name for -N: {struct_abbrev}{bw_abbrev}{route_abbrev}_{bench_abbrev}."""
+    sa  = STRUCT_ABBREV.get(struct, struct[:3])
+    ba  = BW_ABBREV.get(bw, bw[:3])
+    ra  = route_abbrev(rk)
+    app = bench_abbrev(bench)
     return f"{sa}{ba}{ra}_{app}"
 
 
