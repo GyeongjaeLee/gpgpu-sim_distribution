@@ -28,10 +28,11 @@ from experiments_loader import load_experiments
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _HERE          = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR       = os.path.normpath(os.path.join(_HERE, "..", ".."))  # cwd for run_simulations.py
 HITRATE_CSV    = os.path.join(_HERE, "hitrate.csv")
 HW_OUT_BASE    = os.path.join(_HERE, "configs", "tested-cfgs")
-RUN_SIM_SCRIPT = os.path.join(_HERE, "..", "..", "util", "job_launching", "run_simulations.py")
-TRACE_BASE     = os.path.join(_HERE, "hw_run", "traces", "device-0", "12.8")
+RUN_SIM_SCRIPT = os.path.join(ROOT_DIR, "util", "job_launching", "run_simulations.py")
+TRACE_BASE     = os.path.join(ROOT_DIR, "hw_run", "traces", "device-0", "12.8")
 
 # ── Experiment tables ─────────────────────────────────────────────────────────
 STRUCTURES, BANDWIDTHS = load_experiments(os.path.join(_HERE, "experiments.csv"))
@@ -130,9 +131,10 @@ def patch_baseline_ratio(icnt_path: str, ratio: float) -> None:
 
 
 def run_once(cmd: list) -> int:
-    """Run cmd and return its exit code."""
-    print(f"\n[RUN] {' '.join(cmd)}")
-    result = subprocess.run(cmd)
+    """Run cmd from ROOT_DIR (../../) and return its exit code."""
+    print(f"\n[RUN] (cwd={ROOT_DIR})")
+    print(f"      {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=ROOT_DIR)
     return result.returncode
 
 
@@ -210,7 +212,8 @@ def main() -> None:
     failures = []
 
     for struct, bw, rk in combos:
-        dir_name = f"SM100_{struct}_{bw}_{rk}"
+        config_name = f"{struct}_{bw}_{rk}"
+        dir_name = f"SM100_{config_name}"
         icnt_path = os.path.join(HW_OUT_BASE, dir_name, "config_blackwell_islip.icnt")
 
         print(f"─── {dir_name}")
@@ -231,7 +234,7 @@ def main() -> None:
                 print(f"  Patched baseline_ratio = {hit_rate}")
 
         # Build run_simulations.py command
-        cfg_name = f"{dir_name}-SASS"
+        cfg_name = f"{config_name}-SASS"
         jname    = job_name(struct, bw, rk, bench)
         cmd = [
             sys.executable, RUN_SIM_SCRIPT,
