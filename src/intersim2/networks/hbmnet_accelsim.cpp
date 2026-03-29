@@ -1385,7 +1385,9 @@ static int accel_pick_near_min_port(const Router *r, const Flit *f,
       // penalty=0.0 → full boost (min cost = sat + lat*(1+sat), aggressive)
       cost = saturation;
     }
-    if (cost < best_cost) {
+    // Tie-break by neighbor ID (ascending) to match min_adaptive's map iteration order
+    if (cost < best_cost ||
+        (cost == best_cost && best_idx >= 0 && dir_nb[i] < dir_nb[best_idx])) {
       best_cost = cost;
       best_idx = (int)i;
     }

@@ -177,11 +177,15 @@ def find_reference(structs_bws: list, active_rks: list) -> tuple:
 
 
 def build_normalized(rows: list, benches: list,
-                     structs_bws: list, active_rks: list) -> dict:
+                     structs_bws: list, active_rks: list,
+                     normalize_per_sb: bool = False) -> dict:
     """
     Returns norm[(bench, sb, rk)] = (speedup, bw_ratio).
       speedup  = ref_lat / this_lat   (higher is better, ref = 1.0)
       bw_ratio = this_bw / ref_bw     (higher is better, ref = 1.0)
+
+    normalize_per_sb=True: reference is (bench, sb, baseline) for each sb group.
+    normalize_per_sb=False: reference is (bench, worst_sb, baseline) globally.
     """
     # Raw lookup
     raw: dict = {}
@@ -190,35 +194,64 @@ def build_normalized(rows: list, benches: list,
         lat = r['tot_cycle'] / (clock_mhz(r['struct']) * 1e6)
         raw[key] = (lat, r['l2_bw'])
 
-    worst_sb, worst_rk = find_reference(structs_bws, active_rks)
-    print(f"Reference: struct+bw={sb_label(*worst_sb)}  routing={worst_rk}")
+    if not normalize_per_sb:
+        worst_sb, worst_rk = find_reference(structs_bws, active_rks)
+        print(f"Reference: struct+bw={sb_label(*worst_sb)}  routing={worst_rk}")
+
+    ref_rk = 'baseline' if 'baseline' in active_rks else active_rks[0]
 
     norm: dict = {}
     for bench in benches:
-        ref_key = (bench, worst_sb, worst_rk)
-        if ref_key in raw:
-            ref_lat, ref_bw = raw[ref_key]
-        else:
-            # Fallback: use worst observed values for this benchmark
-            bench_vals = [(lat, bw) for (b, _, __), (lat, bw) in raw.items() if b == bench]
-            if not bench_vals:
-                ref_lat, ref_bw = 1.0, 1.0
-            else:
-                ref_lat = max(v[0] for v in bench_vals)
-                ref_bw  = min((v[1] for v in bench_vals if v[1] > 0), default=1.0)
-            print(f"  [WARN] Reference ({sb_label(*worst_sb)}, {worst_rk}) not found "
-                  f"for {bench_abbrev(bench)} — using worst observed.")
+        if normalize_per_sb:
+            # Per-sb normalization: each (struct+bw) group uses its own baseline as ref
+            for sb in structs_bws:
+                ref_key = (bench, sb, ref_rk)
+                if ref_key in raw:
+                    ref_lat, ref_bw = raw[ref_key]
+                else:
+                    sb_vals = [(lat, bw) for (b, s, _), (lat, bw) in raw.items()
+                               if b == bench and s == sb]
+                    if not sb_vals:
+                        continue
+                    ref_lat = max(v[0] for v in sb_vals)
+                    ref_bw  = min((v[1] for v in sb_vals if v[1] > 0), default=1.0)
+                    print(f"  [WARN] Reference ({sb_label(*sb)}, {ref_rk}) not found "
+                          f"for {bench_abbrev(bench)} — using worst observed in group.")
 
-        for sb in structs_bws:
-            for rk in active_rks:
-                key = (bench, sb, rk)
-                if key not in raw:
-                    continue
-                lat, bw = raw[key]
-                norm[key] = (
-                    ref_lat / max(lat, 1e-30),
-                    bw      / max(ref_bw, 1e-30),
-                )
+                for rk in active_rks:
+                    key = (bench, sb, rk)
+                    if key not in raw:
+                        continue
+                    lat, bw = raw[key]
+                    norm[key] = (
+                        ref_lat / max(lat, 1e-30),
+                        bw      / max(ref_bw, 1e-30),
+                    )
+        else:
+            # Global normalization: single reference across all sb groups
+            ref_key = (bench, worst_sb, worst_rk)
+            if ref_key in raw:
+                ref_lat, ref_bw = raw[ref_key]
+            else:
+                bench_vals = [(lat, bw) for (b, *_), (lat, bw) in raw.items() if b == bench]
+                if not bench_vals:
+                    ref_lat, ref_bw = 1.0, 1.0
+                else:
+                    ref_lat = max(v[0] for v in bench_vals)
+                    ref_bw  = min((v[1] for v in bench_vals if v[1] > 0), default=1.0)
+                print(f"  [WARN] Reference ({sb_label(*worst_sb)}, {worst_rk}) not found "
+                      f"for {bench_abbrev(bench)} — using worst observed.")
+
+            for sb in structs_bws:
+                for rk in active_rks:
+                    key = (bench, sb, rk)
+                    if key not in raw:
+                        continue
+                    lat, bw = raw[key]
+                    norm[key] = (
+                        ref_lat / max(lat, 1e-30),
+                        bw      / max(ref_bw, 1e-30),
+                    )
     return norm
 
 
@@ -238,6 +271,9 @@ def main() -> None:
                     help='near_min_adaptive p values (default: all found in CSV)')
     ap.add_argument('--bench-order', nargs='+', metavar='BENCH',
                     help='Explicit benchmark display order (full spec)')
+    ap.add_argument('--normalize-per-sb', action='store_true',
+                    help='Normalize each struct+bw group against its own baseline routing '
+                         '(instead of a single global reference)')
     ap.add_argument('--output', '-o', default=None)
     ap.add_argument('--dpi',     type=int,   default=150)
     ap.add_argument('--figsize', nargs=2, type=float, metavar=('W', 'H'))
@@ -299,7 +335,10 @@ def main() -> None:
         return
 
     # Normalize
-    norm = build_normalized(rows, benches, structs_bws, active_rks)
+    if args.normalize_per_sb:
+        print("Normalization mode: per struct+bw group (ref = baseline within each group)")
+    norm = build_normalized(rows, benches, structs_bws, active_rks,
+                            normalize_per_sb=args.normalize_per_sb)
 
     # ── Layout ────────────────────────────────────────────────────────────
     n_r  = len(active_rks)
