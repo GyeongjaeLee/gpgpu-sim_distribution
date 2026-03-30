@@ -17,37 +17,38 @@ Aggregation rules:
   Link util     : sum counts, recompute pct
   Link avg_sat  : weighted average (weight = per-kernel link-type traversal count)
   Per-direction : same weighted scheme
-  Near-min      : summed across kernels (near_min_adaptive routing only)
+  Near-min      : summed across kernels (near_min_adaptive/random only)
 
 Outputs (prefix auto-generated from options if --output is omitted):
   {prefix}_summary.csv       – one row per (struct, bw, routing)
   {prefix}_directions.csv    – one row per (struct, bw, routing, src, dst)
-  {prefix}_nm_directions.csv – near-min direction breakdown (near_min_adaptive only)
+  {prefix}_nm_directions.csv – near-min direction breakdown (near_min_adaptive/random only)
 
 Usage examples:
 
   # Single structure/bandwidth/routing, auto-generated prefix
-  python parse_accelsim_results.py \\
-      --benchmark rodinia-3.1:bfs-rodinia-3.1 \\
-      --structure B100_Global \\
-      --bandwidth B200+HBM3e \\
-      --routing baseline min_adaptive near_min_adaptive \\
+  python parse_accelsim_results.py \
+      --benchmark rodinia-3.1:bfs-rodinia-3.1 \
+      --structure B100_Global \
+      --bandwidth B200+HBM3e \
+      --routing baseline min_adaptive near_min_adaptive near_min_random \
+      --near-min-k 2 \
       --near-min-p 0.0 1.0
 
   # Multiple structures and bandwidths with explicit output prefix
-  python parse_accelsim_results.py \\
-      --benchmark polybench:polybench-gemm \\
-      --structure B100_Local B100_Global H100 \\
-      --bandwidth B200+HBM3e Shoreline_1x \\
-      --routing baseline near_min_adaptive \\
-      --near-min-p 0.0 \\
+  python parse_accelsim_results.py \
+      --benchmark polybench:polybench-gemm \
+      --structure B100_Local B100_Global H100 \
+      --bandwidth B200+HBM3e Shoreline_1x \
+      --routing baseline near_min_adaptive \
+      --near-min-k 2 --near-min-p 1.0 \
       --output gemm_results
 
   # All configs from experiments.csv
-  python parse_accelsim_results.py \\
-      --benchmark GPU_Microbenchmark:mem_bw \\
-      --all-configs \\
-      --routing baseline min_adaptive
+  python parse_accelsim_results.py \
+      --benchmark GPU_Microbenchmark:mem_bw \
+      --all-configs \
+      --routing baseline min_adaptive fixed_min
 """
 
 import argparse
@@ -71,7 +72,8 @@ STRUCTURES, BANDWIDTHS = load_experiments(os.path.join(_HERE, "experiments.csv")
 
 ROUTING_CHOICES = [
     "baseline", "min_oblivious", "min_adaptive",
-    "near_min_adaptive", "ugal", "valiant",
+    "near_min_adaptive", "near_min_random", "fixed_min", 
+    "ugal", "valiant",
 ]
 
 LINK_TYPES     = ["XBAR_XBAR", "XBAR_HBM", "XBAR_MC", "MC_HBM", "MC_MC"]
@@ -80,10 +82,15 @@ SAT_LINK_TYPES = ["XBAR_XBAR", "XBAR_MC", "MC_MC"]  # only these have avg_sat da
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def routing_to_key(routing: str, near_min_p: Optional[float] = None) -> str:
+def routing_to_key(routing: str, near_min_k: Optional[int] = None, near_min_p: Optional[float] = None) -> str:
+    """Convert routing name (+ optional K and P values) to a directory key."""
     if routing == "near_min_adaptive":
+        k = near_min_k if near_min_k is not None else 2
         p = near_min_p if near_min_p is not None else 1.0
-        return f"near_min_p{p:.1f}"
+        return f"{routing}_nmk{k}_nmp{p:.1f}"
+    elif routing == "near_min_random":
+        k = near_min_k if near_min_k is not None else 2
+        return f"{routing}_nmk{k}"
     return routing
 
 
@@ -473,8 +480,10 @@ def main() -> None:
                     metavar='BW', required=True)
     ap.add_argument('--routing', nargs='+', choices=ROUTING_CHOICES,
                     metavar='ROUTING', default=['baseline'])
+    ap.add_argument('--near-min-k', nargs='+', type=int, metavar='K',
+                    default=[2], help='Near-min routing budget (default: 2)')
     ap.add_argument('--near-min-p', nargs='+', type=float, metavar='P',
-                    default=[1.0])
+                    default=[1.0], help='Near-min routing penalty multiplier (default: 1.0)')
     ap.add_argument('--all-configs', action='store_true',
                     help='Use all structures and bandwidths from experiments.csv')
     ap.add_argument('--output', '-o', default=None,
@@ -493,13 +502,21 @@ def main() -> None:
         structures = args.structure
         bandwidths = args.bandwidth
 
+    # Expand routing keys dynamically based on combinations
     routing_keys: list = []
     for r in args.routing:
         if r == 'near_min_adaptive':
-            for p in args.near_min_p:
-                routing_keys.append(routing_to_key(r, p))
+            for k in args.near_min_k:
+                for p in args.near_min_p:
+                    routing_keys.append(routing_to_key(r, near_min_k=k, near_min_p=p))
+        elif r == 'near_min_random':
+            for k in args.near_min_k:
+                routing_keys.append(routing_to_key(r, near_min_k=k))
         else:
             routing_keys.append(r)
+            
+    # Remove duplicates
+    routing_keys = list(dict.fromkeys(routing_keys))
 
     bench = args.benchmark
     if args.output is None:

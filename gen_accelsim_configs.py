@@ -42,24 +42,45 @@ STRUCTURES, BANDWIDTHS = load_experiments(os.path.join(_HERE, "experiments.csv")
 # ── Routing ───────────────────────────────────────────────────────────────────
 ROUTING_CHOICES = [
     "baseline", "min_oblivious", "min_adaptive",
-    "near_min_adaptive", "ugal", "valiant",
+    "near_min_adaptive", "near_min_random", "fixed_min", 
+    "ugal", "valiant",
 ]
 
-def routing_to_key(routing: str, near_min_p: Optional[float] = None) -> str:
+def routing_to_key(routing: str, near_min_k: Optional[int] = None, near_min_p: Optional[float] = None) -> str:
+    """Generate a unique directory key based on routing and its parameters."""
     if routing == "near_min_adaptive":
+        k = near_min_k if near_min_k is not None else 2
         p = near_min_p if near_min_p is not None else 1.0
-        return f"near_min_p{p:.1f}"
+        return f"{routing}_nmk{k}_nmp{p:.1f}"
+    elif routing == "near_min_random":
+        k = near_min_k if near_min_k is not None else 2
+        return f"{routing}_nmk{k}"
     return routing
 
 def routing_key_to_overrides(key: str) -> dict:
-    if key == "baseline":
-        return {"routing_function": "baseline", "is_fabric": "0"}
+    """Convert the routing key back into config overrides."""
+    # Base overrides for all hybrid routing cases
     ov: dict = {"routing_function": "hybrid", "is_fabric": "1"}
-    m = re.match(r"near_min_p([\d.]+)$", key)
-    if m:
-        ov["hybrid_routing"]   = "near_min_adaptive"
-        ov["near_min_penalty"] = m.group(1)
+    
+    if key == "baseline":
+        ov["is_fabric"] = "0"
+        ov["hybrid_routing"] = "baseline"
         return ov
+        
+    m_adp = re.match(r"^near_min_adaptive_nmk(\d+)_nmp([\d.]+)$", key)
+    if m_adp:
+        ov["hybrid_routing"]   = "near_min_adaptive"
+        ov["near_min_k"]       = m_adp.group(1)
+        ov["near_min_penalty"] = m_adp.group(2)
+        return ov
+
+    m_rnd = re.match(r"^near_min_random_nmk(\d+)$", key)
+    if m_rnd:
+        ov["hybrid_routing"]   = "near_min_random"
+        ov["near_min_k"]       = m_rnd.group(1)
+        return ov
+        
+    # All other routings (min_adaptive, fixed_min, ugal, etc.)
     ov["hybrid_routing"] = key
     return ov
 
@@ -123,17 +144,17 @@ def _icnt_overrides(struct: str, bw: str, routing_key: str) -> "dict[str, str]":
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-# 1. HW Configs (생성 위치: 현재 경로 내 ./configs/...)
+# 1. HW Configs
 HW_BASE_DIR     = "./configs/tested-cfgs/SM100_B200_fabric"
 BASE_ICNT       = os.path.join(HW_BASE_DIR, "config_blackwell_islip.icnt")
 BASE_GPGPUSIM   = os.path.join(HW_BASE_DIR, "gpgpusim.config")
 HW_OUT_BASE_DIR = "./configs/tested-cfgs"
 
-# 2. Trace Configs (명시적 상대 경로: ../configs/...)
+# 2. Trace Configs
 TRACE_SRC_DIR      = "../configs/tested-cfgs/SM100_B200"
 TRACE_OUT_BASE_DIR = "../configs/tested-cfgs"
 
-# 3. YAML 정의 파일 (명시적 상대 경로)
+# 3. YAML
 YAML_DEF_FILE = "../../util/job_launching/configs/define-standard-cfgs.yml"
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -145,6 +166,7 @@ def main() -> None:
     ap.add_argument("--structure", nargs="+", choices=list(STRUCTURES), metavar="STRUCT")
     ap.add_argument("--bandwidth", nargs="+", choices=list(BANDWIDTHS), metavar="BW")
     ap.add_argument("--routing", nargs="+", choices=ROUTING_CHOICES, metavar="ROUTING", default=["baseline"])
+    ap.add_argument("--near-min-k", nargs="+", type=int, metavar="K", default=[2])
     ap.add_argument("--near-min-p", nargs="+", type=float, metavar="P", default=[1.0])
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
@@ -162,10 +184,17 @@ def main() -> None:
     routing_keys: list[str] = []
     for r in args.routing:
         if r == "near_min_adaptive":
-            for p in args.near_min_p:
-                routing_keys.append(routing_to_key(r, p))
+            for k in args.near_min_k:
+                for p in args.near_min_p:
+                    routing_keys.append(routing_to_key(r, near_min_k=k, near_min_p=p))
+        elif r == "near_min_random":
+            for k in args.near_min_k:
+                routing_keys.append(routing_to_key(r, near_min_k=k))
         else:
             routing_keys.append(r)
+
+    # Remove any duplicates (especially from near_min_random expanding multiple 'p' values)
+    routing_keys = list(dict.fromkeys(routing_keys))
 
     combos = [(s, b, rk) for s in structures for b in bandwidths for rk in routing_keys]
 
@@ -175,41 +204,31 @@ def main() -> None:
 
     for struct, bw, rk in combos:
         s_info = STRUCTURES[struct]
+        b_info = BANDWIDTHS[bw]
         
-        # 실제 디렉토리명
         dir_name = f"SM100_{struct}_{bw}_{rk}"
-        # YAML에 들어갈 키 이름 (B200: 처럼 앞부분 생략)
         yaml_key = f"{struct}_{bw}_{rk}" 
         
-        # --- 새로 추가된 부분: 클러스터(SM) 수 동적 계산 ---
-        # Structure의 num_xbars 값에 Xbar 당 SM 수를 곱합니다.
-        b_info = BANDWIDTHS[bw]
         K = s_info["num_xbars"] * s_info["hbm_per_side"] * 2
         n_clusters = s_info["num_xbars"] * s_info["sm_per_xbar"]
         n_mem = b_info["l2_per_hbm"] * K // N_SUB_PARTITION
 
-        # 1. HW Config 아웃풋 경로
         hw_out_dir = os.path.join(HW_OUT_BASE_DIR, dir_name)
         icnt_dst   = os.path.join(hw_out_dir, "config_blackwell_islip.icnt")
         gpgpu_dst  = os.path.join(hw_out_dir, "gpgpusim.config")
 
-        # 2. Trace Config 아웃풋 경로
         trace_out_dir = os.path.join(TRACE_OUT_BASE_DIR, dir_name)
 
-        # 3. YAML에 기록될 포맷 ($GPGPUSIM_ROOT 기준)
         yaml_path = f"$GPGPUSIM_ROOT/configs/tested-cfgs/{dir_name}/gpgpusim.config"
         
-        # 페이로드 임시 저장 (중복 방지는 나중에 처리)
         yaml_payload_lines.append((yaml_key, yaml_path))
 
         if args.dry_run:
             continue
         
-        # --- 디렉토리 생성 ---
         os.makedirs(hw_out_dir, exist_ok=True)
         os.makedirs(trace_out_dir, exist_ok=True)
 
-        # --- Trace Config 복사 ---
         if os.path.exists(TRACE_SRC_DIR):
             for item in os.listdir(TRACE_SRC_DIR):
                 src_file = os.path.join(TRACE_SRC_DIR, item)
@@ -219,11 +238,9 @@ def main() -> None:
         else:
             print(f"[ERROR] Trace source dir not found: {TRACE_SRC_DIR}")
 
-        # --- HW Config 패치 및 생성 ---
         if os.path.exists(BASE_ICNT) and os.path.exists(BASE_GPGPUSIM):
             ov = _icnt_overrides(struct, bw, rk)
             _patch_file(BASE_ICNT, icnt_dst, ov)
-            # n_clusters 인자를 추가로 넘겨주어 gpgpusim.config를 수정합니다.
             _patch_gpgpusim(BASE_GPGPUSIM, gpgpu_dst, n_mem, n_clusters)
         else:
             print(f"[ERROR] HW Base configs not found in {HW_BASE_DIR}")
@@ -237,7 +254,6 @@ def main() -> None:
         print("[DRY RUN] Finished without writing files.")
         return
 
-    # --- YAML 파일 특정 위치(B200 바로 아래)에 삽입 로직 ---
     if os.path.exists(YAML_DEF_FILE):
         print(f"Updating YAML: {YAML_DEF_FILE}")
         with open(YAML_DEF_FILE, "r") as f:
@@ -245,7 +261,6 @@ def main() -> None:
             
         existing_content = "".join(yaml_lines)
         
-        # 삽입할 내용 문자열 생성 (중복 배제)
         insert_str = ""
         appended_count = 0
         for key_name, path in yaml_payload_lines:
@@ -255,22 +270,18 @@ def main() -> None:
                 appended_count += 1
                 
         if insert_str:
-            # B200: 위치 찾기
             insert_idx = -1
             for i, line in enumerate(yaml_lines):
                 if line.strip() == "B200:":
-                    # 그 다음 줄이 base_file: ... 일 테니, 그 다음다음 줄(i+2)에 넣기 위함
                     insert_idx = i + 2 
                     break
             
             if insert_idx != -1:
-                # 찾은 위치 바로 아래에 삽입
                 yaml_lines.insert(insert_idx, insert_str)
                 with open(YAML_DEF_FILE, "w") as f:
                     f.writelines(yaml_lines)
                 print(f"SUCCESS: Inserted {appended_count} new entries right below 'B200:' block.")
             else:
-                # 혹시라도 B200: 을 못 찾으면 맨 밑에 추가
                 print("WARNING: Could not find 'B200:' in yaml. Appending to bottom instead.")
                 with open(YAML_DEF_FILE, "a") as f:
                     f.write("\n" + insert_str)

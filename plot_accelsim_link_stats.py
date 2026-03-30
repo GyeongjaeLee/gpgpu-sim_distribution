@@ -20,32 +20,33 @@ Usage examples
 ──────────────────────────────────────────────────────────────────────────────
 
 # 1. Single benchmark, selected structures/BWs/routings, save as PNG
-python plot_accelsim_link_stats.py \\
-    bfs_BG_H3_bas+mina_directions.csv \\
-    --structure B100_Global \\
-    --bandwidth B200+HBM3e \\
-    --routing baseline near_min_adaptive \\
-    --metric both \\
+python plot_accelsim_link_stats.py \
+    bfs_BG_H3_bas+mina_directions.csv \
+    --structure B100_Global \
+    --bandwidth B200+HBM3e \
+    --routing baseline near_min_adaptive near_min_random \
+    --near-min-k 2 --near-min-p 1.0 \
+    --metric both \
     -o bfs_link.png
 
 # 2. Multiple benchmarks from separate CSVs, specific routing
-python plot_accelsim_link_stats.py \\
-    bfs_BG_H3_bas_directions.csv \\
-    gemm_BG_H3_bas_directions.csv \\
-    --routing baseline \\
-    --metric util \\
+python plot_accelsim_link_stats.py \
+    bfs_BG_H3_bas_directions.csv \
+    gemm_BG_H3_bas_directions.csv \
+    --routing fixed_min \
+    --metric util \
     -o multi_link_util.png
 
 # 3. Near-min direction breakdown (use _nm_directions.csv)
-python plot_accelsim_link_stats.py \\
-    bfs_RU_H4_nm10_nm_directions.csv \\
-    --near \\
-    --metric sat \\
+python plot_accelsim_link_stats.py \
+    bfs_RU_H4_nm_directions.csv \
+    --near \
+    --metric sat \
     -o bfs_nearmin_sat.png
 
 # 4. All configs from CSV, both metrics, interactive display
-python plot_accelsim_link_stats.py \\
-    results_directions.csv \\
+python plot_accelsim_link_stats.py \
+    results_directions.csv \
     --all-configs
 """
 
@@ -71,16 +72,22 @@ BANDWIDTHS = list(BANDWIDTHS_DICT.keys())
 
 ROUTING_CHOICES = [
     "baseline", "min_oblivious", "min_adaptive",
-    "near_min_adaptive", "ugal", "valiant",
+    "near_min_adaptive", "near_min_random", "fixed_min", 
+    "ugal", "valiant",
 ]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def routing_to_key(routing: str, near_min_p: Optional[float] = None) -> str:
+def routing_to_key(routing: str, near_min_k: Optional[int] = None, near_min_p: Optional[float] = None) -> str:
+    """Convert routing name (+ optional K and P values) to a directory/CSV key."""
     if routing == "near_min_adaptive":
+        k = near_min_k if near_min_k is not None else 2
         p = near_min_p if near_min_p is not None else 1.0
-        return f"near_min_p{p:.1f}"
+        return f"{routing}_nmk{k}_nmp{p:.1f}"
+    elif routing == "near_min_random":
+        k = near_min_k if near_min_k is not None else 2
+        return f"{routing}_nmk{k}"
     return routing
 
 
@@ -96,18 +103,28 @@ def short_bench(bench: str) -> str:
 
 
 def short_routing(rk: str) -> str:
+    """Convert long routing keys into compact chart titles."""
     abbrev = {
         "baseline":      "bas",
         "min_oblivious": "mino",
         "min_adaptive":  "mina",
+        "fixed_min":     "fixm",
         "ugal":          "ug",
         "valiant":       "val",
     }
     if rk in abbrev:
         return abbrev[rk]
-    m = re.match(r"near_min_p([\d.]+)", rk)
-    if m:
-        return "nm" + m.group(1).replace(".", "")
+        
+    m_adp = re.match(r"^near_min_adaptive_nmk(\d+)_nmp([\d.]+)$", rk)
+    if m_adp:
+        # e.g., near_min_adaptive_nmk2_nmp1.0 -> nma_k2_p10
+        return f"nma_k{m_adp.group(1)}_p{m_adp.group(2).replace('.', '')}"
+        
+    m_rnd = re.match(r"^near_min_random_nmk(\d+)$", rk)
+    if m_rnd:
+        # e.g., near_min_random_nmk2 -> nmr_k2
+        return f"nmr_k{m_rnd.group(1)}"
+        
     return rk[:5]
 
 
@@ -229,7 +246,7 @@ def make_annotation(summary_row: Optional[dict], mode: str) -> str:
     if perf:
         lines.append(" ".join(perf))
 
-    # Near-min ratio (only present for near_min_adaptive)
+    # Near-min ratio (present for near_min_adaptive/random)
     try:
         nm = summary_row.get("nm_ratio", "")
         if nm:
@@ -299,9 +316,10 @@ def main():
                     help="Bandwidths to plot (default: all found in CSV)")
     ap.add_argument("--routing", nargs="+", choices=ROUTING_CHOICES,
                     metavar="ROUTING", default=["baseline"])
+    ap.add_argument("--near-min-k", nargs="+", type=int, metavar="K",
+                    default=[2], help="near_min_k values (default: 2)")
     ap.add_argument("--near-min-p", nargs="+", type=float, metavar="P",
-                    default=None,
-                    help="near_min_adaptive p values (default: all found in CSV)")
+                    default=[1.0], help="near_min_penalty p values (default: 1.0)")
     ap.add_argument("--all-configs", action="store_true",
                     help="Use all structures and bandwidths from experiments.csv")
     ap.add_argument("--metric", choices=["both", "util", "sat"], default="both")
@@ -344,22 +362,20 @@ def main():
                 break
 
     # ── Determine filter sets ─────────────────────────────────────────────
-    # Build routing key list; resolve near_min_p from CSV if not specified
+    # Expand routing keys to match exactly how they are formatted in CSV
     routing_keys: list = []
-    near_min_requested = False
     for r in args.routing:
         if r == "near_min_adaptive":
-            near_min_requested = True
-            if args.near_min_p:
+            for k in args.near_min_k:
                 for p in args.near_min_p:
-                    routing_keys.append(routing_to_key(r, p))
+                    routing_keys.append(routing_to_key(r, near_min_k=k, near_min_p=p))
+        elif r == "near_min_random":
+            for k in args.near_min_k:
+                routing_keys.append(routing_to_key(r, near_min_k=k))
         else:
             routing_keys.append(r)
-
-    if near_min_requested and not args.near_min_p:
-        csv_nm = list(dict.fromkeys(
-            k[3] for k in all_directions if k[3].startswith("near_min_p")))
-        routing_keys.extend(csv_nm)
+            
+    routing_keys = list(dict.fromkeys(routing_keys)) # Remove duplicates
 
     # Infer available values from CSV
     csv_benchmarks = sorted({k[0] for k in all_directions})
