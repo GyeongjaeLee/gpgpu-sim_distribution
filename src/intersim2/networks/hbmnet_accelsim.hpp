@@ -98,6 +98,7 @@ extern long long gAccelTotalEjects;
 // Near-min adaptive decision counters
 extern long long gAccelNearMinMinDecisions;
 extern long long gAccelNearMinNonMinDecisions;
+extern long long gAccelNearMinPlus2Decisions;
 
 // Near-min path-level tracking
 extern long long gAccelNearMinPathsUsed;   // packets that took near-min at least once

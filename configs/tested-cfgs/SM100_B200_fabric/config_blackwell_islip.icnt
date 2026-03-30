@@ -3,7 +3,6 @@ use_map = 0;
 flit_size = 40;
 
 network_count = 1;
-
 // AccelSim HBMNet Topology
 // Models L2-HBM path: hit (Xbar→HBM) vs miss (Xbar→MC→HBM)
 topology = hbmnet_accelsim;
@@ -19,12 +18,24 @@ l2_per_hbm = 32;      // L2 slices per HBM stack
 l2_interleave = 0;
 
 // Routing
-// All routing functions decide hit/miss at injection based on baseline_ratio (hit rate).
+// routing_function must always be "hybrid" — hit/miss split is decided at injection
+// based on baseline_ratio (hit rate).
 // Hit flits: Xbar → HBM (direct)
-// Miss flits: Xbar → MC → (MC fabric if available) → HBM
-routing_function = baseline;
+// Miss flits: Xbar → MC → (MC fabric if available) → HBM, routed via hybrid_routing.
+routing_function = hybrid;
 
-is_fabric = 0;
+// Miss-path routing sub-function:
+//   baseline          deterministic chain routing (no MC-MC fabric)
+//   min_adaptive      least-congested minimal port selection
+//   min_oblivious     random minimal port selection
+//   near_min_adaptive near-minimal with congestion-aware detour (+1/+2 hop)
+//   near_min_random   near-minimal with random detour selection (+1/+2 hop)
+//   fixed_min         deterministic min, MC-MC fabric preferred over Xbar chain
+//   ugal              adaptive non-minimal via intermediate
+//   valiant           oblivious non-minimal via random intermediate
+hybrid_routing = baseline;
+
+is_fabric = 1;
 ugal_threshold = 50;
 ugal_intm_select = 0;
 
@@ -34,12 +45,29 @@ baseline_ratio = 0.2;
 // Miss routing sub-function for hybrid: baseline/min_adaptive/near_min_adaptive/ugal/valiant/min_oblivious
 hybrid_routing = near_min_adaptive;
 
-// Near-min adaptive: max extra hops beyond minimum (k=1 allows one MC-MC detour)
-near_min_k = 1;
+// Near-min k budget: max total non-min hops allowed per packet
+//   k=1: allows one +1 hop (dist stays same) — cannot do +2 hop
+//   k=2: allows one +2 hop (dist increases by 1, 2x penalty) OR one +1 hop
+//        (+1 hop twice is blocked by u-turn prevention in practice)
+near_min_k = 2;
 
 // Near-min penalty multiplier: scales the latency penalty for near-min directions.
 // 0.0 = no penalty (always pick least congested), 1.0 = default, >1.0 = more conservative
+// +1 hop cost: sat + penalty * lat_norm * (1 + sat)
+// +2 hop cost: sat + 2 * penalty * lat_norm * (1 + sat)
 near_min_penalty = 1.0;
+
+// Near-min strict mode: controls where non-min hops are allowed
+//   0 = relieved: non-min blocked only when cur partition is outside the natural
+//                 routing range [min(src_part,dest_part), max(src_part,dest_part)].
+//                 Non-min IS allowed in dest partition. Applies to Xbar and MC.
+//   1 = strict:   non-min blocked once packet enters the dest partition
+near_min_strict = 0;
+
+// Near-min remote-only: restrict non-min hops to cross-partition (remote) accesses only
+//   0 = allow non-min for both local and remote accesses (default)
+//   1 = disable non-min for same-partition (local) accesses
+near_min_remote_only = 1;
 
 inject_latency = 50;
 eject_latency = 50;
@@ -80,8 +108,9 @@ sw_alloc_delay = 1;
 input_speedup     = 1;
 output_speedup    = 1;
 internal_speedup  = 2.0;
-// HBM router internal speedup override (0.0 = use global internal_speedup)
-// Set > 0 to give HBM routers a faster crossbar so mc_hbm_bandwidth (TSV) is the bottleneck.
+// HBM router internal speedup override (0.0 = use global internal_speedup).
+// Set > 0 to give HBM routers a faster crossbar so mc_hbm_bandwidth is the
+// true TSV bottleneck rather than the router crossbar.
 hbm_internal_speedup = 0.0;
 
 // Traffic

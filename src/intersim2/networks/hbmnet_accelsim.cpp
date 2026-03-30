@@ -18,6 +18,7 @@ vector<vector<AccelAdjEntry>> gHBMNetAccelAdj;
 vector<vector<int>> gHBMNetAccelDistHit;
 vector<vector<int>> gHBMNetAccelDistMissBaseline;
 vector<vector<int>> gHBMNetAccelDistMissFabric;
+vector<vector<int>> gHBMNetAccelDistNearMin;
 vector<int> gHBMNetAccelRouterConc;
 vector<int> gHBMNetAccelRouterFirstNode;
 int gHBMNetAccelK = 0;
@@ -38,6 +39,8 @@ static int gAccelLinkLatency[5] = {0, 0, 0, 0, 0};
 // Near-min adaptive config
 static int gAccelNearMinK = 1;
 static double gAccelNearMinPenalty = 1.0;  // penalty multiplier for near-min cost
+static int gAccelNearMinStrict = 0;      // 0=relieved(no non-min in opp partitions), 1=strict(no non-min in dest partition)
+static int gAccelNearMinRemoteOnly = 0;  // 0=allow non-min everywhere, 1=only for remote (cross-partition) access
 
 // Topology parameters cached for routing
 static int gAccelNumSMs;
@@ -47,7 +50,9 @@ static int gAccelInterleave;
 static int gAccelUGALThreshold;
 static int gAccelUGALIntmSelect;
 static double gAccelHitRate;     // baseline_ratio repurposed as L2 hit rate
-static int gAccelHybridRouting;  // 0=baseline,1=min_adaptive,2=ugal,3=valiant,4=min_oblivious,5=near_min_adaptive
+static int gAccelHybridRouting;  // 0=baseline,1=min_adaptive,2=ugal,3=valiant,4=min_oblivious,
+                                 // 5=near_min_adaptive,6=near_min_random,7=fixed_min
+                                 // Set via hybrid_routing= config (routing_function must be hybrid)
 
 // UGAL routing decision counters
 long long gAccelUGALMinDecisions    = 0;
@@ -60,6 +65,7 @@ long long gAccelTotalEjects    = 0;
 // Near-min adaptive decision counters
 long long gAccelNearMinMinDecisions    = 0;
 long long gAccelNearMinNonMinDecisions = 0;
+long long gAccelNearMinPlus2Decisions  = 0;  // +2 hop (backward) decisions
 
 // Near-min path-level tracking
 long long gAccelNearMinPathsUsed  = 0;  // packets that took near-min at least once
@@ -86,6 +92,7 @@ void hbmnet_accelsim_reset_stats() {
   gAccelTotalEjects         = 0;
   gAccelNearMinMinDecisions    = 0;
   gAccelNearMinNonMinDecisions = 0;
+  gAccelNearMinPlus2Decisions  = 0;
   gAccelNearMinPathsUsed    = 0;
   gAccelTotalMissPackets    = 0;
   gAccelNearMinDirCount.clear();
@@ -240,6 +247,7 @@ void hbmnet_accelsim_print_link_stats() {
          << " min=" << gAccelNearMinMinDecisions
          << " non-min=" << gAccelNearMinNonMinDecisions
          << " near-min ratio=" << nm_pct << "%" << endl;
+    cout << "  +2 hop decisions: " << gAccelNearMinPlus2Decisions << endl;
 
     // Path-level near-min usage
     if (gAccelTotalMissPackets > 0) {
@@ -385,6 +393,8 @@ void HBMNetAccelSim::_ComputeSize( const Configuration &config )
   gAccelHitRate        = config.GetFloat("baseline_ratio");  // repurposed as hit rate
   gAccelNearMinK       = config.GetInt("near_min_k");
   gAccelNearMinPenalty = config.GetFloat("near_min_penalty");
+  gAccelNearMinStrict     = config.GetInt("near_min_strict");
+  gAccelNearMinRemoteOnly = config.GetInt("near_min_remote_only");
 
   // Cache link latencies by type for near-min penalty calculation
   gAccelLinkLatency[ACCEL_LINK_XBAR_XBAR] = _xbar_xbar_latency;
@@ -402,7 +412,9 @@ void HBMNetAccelSim::_ComputeSize( const Configuration &config )
   else if (hr == "valiant")            gAccelHybridRouting = 3;
   else if (hr == "min_oblivious")      gAccelHybridRouting = 4;
   else if (hr == "near_min_adaptive")  gAccelHybridRouting = 5;
-  else                                 gAccelHybridRouting = 0;
+  else if (hr == "near_min_random")    gAccelHybridRouting = 6;
+  else if (hr == "fixed_min")   gAccelHybridRouting = 7;
+  else /* "baseline" or unknown */     gAccelHybridRouting = 0;
 
   // Total routers: P Xbars + K MCs + K HBMs
   _size = P + 2 * K;
@@ -535,11 +547,11 @@ void HBMNetAccelSim::_BuildNet( const Configuration &config )
     degree[rid] += _mc_hbm_bandwidth;    // miss path from local MC
   }
 
+  // Create routers
   // Optional per-type internal speedup override for HBM routers.
   // 0.0 (default) = use the global internal_speedup for all routers.
   double hbm_speedup = config.GetFloat("hbm_internal_speedup");
 
-  // Create routers
   for (int rtr = 0; rtr < _size; rtr++) {
     if (accel_is_xbar(rtr))
       name << "router_xbar" << rtr;
@@ -823,6 +835,24 @@ static inline int accel_miss_target(int dest_node) {
   if (accel_is_hbm(dest_router))
     return accel_mc_id(accel_hbm_idx(dest_router));
   return dest_router;  // Xbar
+}
+
+// Return the partition (Xbar index) for any router type.
+//   Xbar: partition = Xbar ID
+//   MC / HBM: partition derived from HBM-index row → row / HPS
+static inline int accel_router_part(int router) {
+  if (accel_is_xbar(router)) return router;
+  if (accel_is_mc(router))  return accel_hbm_part(accel_mc_idx(router));
+  if (accel_is_hbm(router)) return accel_hbm_part(accel_hbm_idx(router));
+  return 0;
+}
+
+// Return the destination partition from a miss_target router
+//   (MC router → its partition; Xbar router → its ID)
+static inline int accel_miss_target_part(int miss_target) {
+  if (accel_is_mc(miss_target))
+    return accel_hbm_part(accel_mc_idx(miss_target));
+  return miss_target;  // Xbar ID == partition
 }
 
 // ============================================================
@@ -1278,29 +1308,61 @@ static void accel_track_link_traversal(const Router *r, int cur, int chosen_port
 }
 
 // ============================================================
-//  NEAR-MINIMAL ADAPTIVE ROUTING (non-hybrid: all miss)
+//  Helper: gate the near-min budget based on strict/relieved mode.
 //
-//  Extension of min_adaptive that allows up to k extra hops
-//  beyond minimum distance, using MC-MC fabric links.
+//  Goal of near-min: replace one Xbar-Xbar hop with extra MC-MC hops.
+//  Xbar↔MC crossing happens exactly once; +k budget = k extra MC-MC steps.
+//  e.g. B200 +1 hop:  Xbar0→MC0→MC1→MC2  (enters MC fabric one row early)
+//       B200 +2 hop:  Xbar0→MC0→MC1→MC2→MC3
 //
-//  At each hop:
-//    - Min directions (dist decreases by 1): cost = avg_saturation
-//    - Near-min directions (dist stays same, k budget > 0):
-//        cost = avg_saturation + latency_penalty * saturation_factor
-//      where latency_penalty = link_latency / max_link_latency (normalized)
-//      and saturation_factor amplifies the penalty when congested.
-//    - Pick least-cost direction overall
-//    - U-turn prevention: exclude the router the flit came from
-//    - k budget tracked in f->nm_budget (separate from f->ph)
-//    - f->nm_used tracks whether near-min was ever taken on this path
+//  Strict:   no non-min once packet is inside dest partition (conservative).
+//  Relieved: no non-min outside the natural routing range [lo, hi]
+//            where lo=min(src_part,dest_part), hi=max(src_part,dest_part).
+//            Blocks "overshoot" past dest but allows non-min within dest partition.
+//  Applies to both Xbar→MC and MC→Xbar traffic directions.
+// ============================================================
+static int accel_nm_effective_budget(int k_remaining, int cur, int miss_target, int src_part) {
+  if (k_remaining <= 0) return 0;
+
+  int dest_part = accel_miss_target_part(miss_target);
+  int cur_part  = accel_router_part(cur);
+
+  // Strict mode
+  if (gAccelNearMinStrict) {
+    if (cur_part == dest_part) return 0;
+  } 
+  // Relieved mode
+  else {
+    int lo = (src_part < dest_part) ? src_part : dest_part;
+    int hi = (src_part > dest_part) ? src_part : dest_part;
+    if (cur_part < lo || cur_part > hi) return 0;
+  }
+
+  return k_remaining;
+}
+
+// ============================================================
+//  NEAR-MINIMAL ADAPTIVE ROUTING
 //
-//  Cost function rationale:
-//    Min cost    = saturation (lower is better: less congested)
-//    NearMin cost = saturation + normalized_latency * (1 + saturation)
-//    The (1+saturation) factor means near-min is more expensive when
-//    the detour direction is already congested, preventing piling up.
-//    The normalized latency penalty reflects the actual delay cost of
-//    the extra hop (MC-MC links are expensive: 160 cycles).
+//  Goal: bypass one Xbar-Xbar hop by entering MC fabric one row early
+//  and traversing extra MC-MC links instead.
+//  e.g. instead of Xbar0→Xbar1→MC2, take Xbar0→MC0→MC1→MC2 (+1 hop).
+//  Xbar↔MC crossing happens exactly once; budget = number of extra MC-MC hops.
+//
+//  Hop classification by dist to miss_target:
+//    min:   nb_dist == cur_dist - 1             (no budget consumed)
+//    +1:    nb_dist == cur_dist,   k_remaining >= 1  (1 budget)
+//    +2:    nb_dist == cur_dist+1, k_remaining >= 2  (2 budget, 2x penalty)
+//
+//  Hard constraints:
+//    - U-turn prevention (skip prev_router)
+//    - At MC (SM→L2 target): skip XBAR-MC links — Xbar↔MC crosses once only
+//    - Non-min Xbar→MC entry: must be same column as dest MC (no cross-column entry)
+//    - Strict / relieved mode: via accel_nm_effective_budget
+//    - Remote-only: nm_budget set to 0 at injection for local (same-partition) access
+// ============================================================
+// ============================================================
+//  NEAR-MINIMAL ADAPTIVE ROUTING
 // ============================================================
 static int accel_pick_near_min_port(const Router *r, const Flit *f,
                                      int in_channel,
@@ -1310,14 +1372,16 @@ static int accel_pick_near_min_port(const Router *r, const Flit *f,
   int cur_dist = dist[cur][target];
   assert(cur_dist > 0);
 
-  // Determine previous router for U-turn prevention
   int prev_router = -1;
   if (in_channel >= 0 && in_channel < (int)gAccelInputPortSrc[cur].size())
     prev_router = gAccelInputPortSrc[cur][in_channel];
 
-  int k_remaining = f->nm_budget;
+  int src_part = f->ph;
+  int k_remaining = accel_nm_effective_budget(f->nm_budget, cur, target, src_part);
 
-  // Max link latency for normalization (cached)
+  int cur_part  = accel_router_part(cur);
+  int dest_part = accel_miss_target_part(target);
+
   static int max_lat = 0;
   if (max_lat == 0) {
     for (int i = 0; i < 5; i++)
@@ -1325,26 +1389,88 @@ static int accel_pick_near_min_port(const Router *r, const Flit *f,
     if (max_lat == 0) max_lat = 1;
   }
 
-  // Collect min and near-min directions grouped by neighbor
+  bool force_mc_mc = false;
+  if (accel_is_mc(cur) && accel_is_mc(target)) {
+    if (accel_hbm_col(accel_mc_idx(cur)) == accel_hbm_col(accel_mc_idx(target))) {
+      int cur_row = accel_hbm_row(accel_mc_idx(cur));
+      int tgt_row = accel_hbm_row(accel_mc_idx(target));
+      int mc_mc_dist = abs(cur_row - tgt_row);
+      int global_dist = dist[cur][target];
+      if (mc_mc_dist - global_dist <= k_remaining) {
+        force_mc_mc = true;
+      }
+    }
+  }
+
   vector<int> dir_nb;
   vector<vector<int>> dir_ports;
   vector<int> dir_credit;
-  vector<bool> dir_is_nearmin;
+  vector<int> dir_hop_type;
   vector<int> dir_latency;
 
   for (size_t i = 0; i < gHBMNetAccelAdj[cur].size(); i++) {
     const AccelAdjEntry &e = gHBMNetAccelAdj[cur][i];
     if (!accel_valid_miss_routing_out(cur, e.type)) continue;
+    
+    // 1. U-turn prevention
     if (e.neighbor == prev_router && prev_router >= 0) continue;
 
     int nb_dist = dist[e.neighbor][target];
     if (nb_dist < 0) continue;
 
-    bool is_min = (nb_dist == cur_dist - 1);
-    bool is_nearmin = (nb_dist == cur_dist && k_remaining > 0);
-    if (!is_min && !is_nearmin) continue;
+    // 2. Distance-based classification
+    bool is_min   = (nb_dist == cur_dist - 1);
+    bool is_plus1 = (nb_dist == cur_dist     && k_remaining >= 1);
+    bool is_plus2 = (nb_dist == cur_dist + 1 && k_remaining >= 2);
+    if (!is_min && !is_plus1 && !is_plus2) continue;
 
-    // Find existing direction entry for this neighbor
+    int nb_part = accel_router_part(e.neighbor);
+
+    // 3. Directionality constraint for MC-MC and Xbar-Xbar
+    if (e.type == ACCEL_LINK_MC_MC || e.type == ACCEL_LINK_XBAR_XBAR) {
+      if (cur_part < dest_part && nb_part < cur_part) continue;
+      if (cur_part > dest_part && nb_part > cur_part) continue;
+      if (cur_part == dest_part && nb_part != dest_part) continue;
+    }
+
+    if (e.type == ACCEL_LINK_MC_MC && accel_is_mc(target)) {
+      if (accel_hbm_col(accel_mc_idx(cur)) == accel_hbm_col(accel_mc_idx(target))) {
+        int cur_row = accel_hbm_row(accel_mc_idx(cur));
+        int tgt_row = accel_hbm_row(accel_mc_idx(target));
+        int nb_row  = accel_hbm_row(accel_mc_idx(e.neighbor));
+        if (tgt_row > cur_row && nb_row < cur_row) continue;
+        if (tgt_row < cur_row && nb_row > cur_row) continue;
+      }
+    }
+
+    // 4. Xbar-MC link constraint
+    if (e.type == ACCEL_LINK_XBAR_MC) {
+      if (accel_is_mc(cur)) {
+        if (force_mc_mc) continue;
+
+        bool is_l2_sm = accel_is_xbar(target);
+        bool is_cross_col = accel_is_mc(target) && 
+            (accel_hbm_col(accel_mc_idx(cur)) != accel_hbm_col(accel_mc_idx(target)));
+        bool is_same_col_out_of_budget = accel_is_mc(target) && !is_cross_col && !force_mc_mc;
+        
+        if (!is_l2_sm && !is_cross_col && !is_same_col_out_of_budget) continue;
+      } 
+      else if (accel_is_xbar(cur)) {
+        if (accel_is_xbar(target)) continue;
+        if (accel_is_mc(target)) {
+          if (accel_hbm_col(accel_mc_idx(e.neighbor)) != accel_hbm_col(accel_mc_idx(target))) continue;
+          int tgt_row = accel_hbm_row(accel_mc_idx(target));
+          int nb_row  = accel_hbm_row(accel_mc_idx(e.neighbor));
+          int mc_mc_dist = abs(nb_row - tgt_row);
+          int total_extra_cost = mc_mc_dist + 1 - cur_dist;
+          if (total_extra_cost > k_remaining) continue;
+        }
+        
+      }
+    }
+
+    int hop_type = is_min ? 0 : (is_plus1 ? 1 : 2);
+
     int idx = -1;
     for (size_t j = 0; j < dir_nb.size(); j++) {
       if (dir_nb[j] == e.neighbor) { idx = (int)j; break; }
@@ -1354,7 +1480,7 @@ static int accel_pick_near_min_port(const Router *r, const Flit *f,
       dir_nb.push_back(e.neighbor);
       dir_ports.push_back(vector<int>());
       dir_credit.push_back(0);
-      dir_is_nearmin.push_back(is_nearmin);
+      dir_hop_type.push_back(hop_type);
       dir_latency.push_back(gAccelLinkLatency[e.type]);
     }
     dir_ports[idx].push_back(e.port);
@@ -1368,24 +1494,17 @@ static int accel_pick_near_min_port(const Router *r, const Flit *f,
   double best_cost = numeric_limits<double>::max();
 
   for (size_t i = 0; i < dir_nb.size(); i++) {
-    // Saturation: avg used credit / buffer capacity per port
     double avg_credit = (double)dir_credit[i] / (double)dir_ports[i].size();
     double saturation = (gAccelPortBufCapacity > 0)
         ? avg_credit / (double)gAccelPortBufCapacity : avg_credit;
     double cost;
-    if (dir_is_nearmin[i]) {
-      // Near-min cost: penalized by latency, scaled by near_min_penalty
-      // penalty=1.0 → full latency penalty (conservative, original behavior)
-      // penalty=0.0 → no penalty, pure congestion comparison
-      double lat_penalty = (double)dir_latency[i] / (double)max_lat;
-      cost = saturation + gAccelNearMinPenalty * lat_penalty * (1.0 + saturation);
+    if (dir_hop_type[i] == 0) {
+      cost = saturation;  
     } else {
-      // Min cost: boosted by (1 - penalty) to make near-min relatively cheaper
-      // penalty=1.0 → no boost (min cost = sat, conservative)
-      // penalty=0.0 → full boost (min cost = sat + lat*(1+sat), aggressive)
-      cost = saturation;
+      double lat_penalty = (double)dir_latency[i] / (double)max_lat;
+      double multiplier = (dir_hop_type[i] == 1) ? 1.0 : 2.0;
+      cost = saturation + multiplier * gAccelNearMinPenalty * lat_penalty * (1.0 + saturation);
     }
-    // Tie-break by neighbor ID (ascending) to match min_adaptive's map iteration order
     if (cost < best_cost ||
         (cost == best_cost && best_idx >= 0 && dir_nb[i] < dir_nb[best_idx])) {
       best_cost = cost;
@@ -1395,22 +1514,206 @@ static int accel_pick_near_min_port(const Router *r, const Flit *f,
 
   assert(best_idx >= 0);
 
-  if (dir_is_nearmin[best_idx]) {
-    f->nm_budget = k_remaining - 1;
+  if (dir_hop_type[best_idx] == 0) {
+    ++gAccelNearMinMinDecisions;
+  } else if (dir_hop_type[best_idx] == 1) {
+    f->nm_budget = f->nm_budget - 1;
     f->nm_used = true;
     ++gAccelNearMinNonMinDecisions;
     gAccelNearMinDirCount[make_pair(cur, dir_nb[best_idx])]++;
   } else {
-    ++gAccelNearMinMinDecisions;
+    f->nm_budget = f->nm_budget - 2;
+    f->nm_used = true;
+    ++gAccelNearMinNonMinDecisions;
+    ++gAccelNearMinPlus2Decisions;
+    gAccelNearMinDirCount[make_pair(cur, dir_nb[best_idx])]++;
   }
 
   vector<int> &ports = dir_ports[best_idx];
   int chosen = ports[RandomInt(ports.size() - 1)];
-
-  // Track link utilization and saturation
   accel_track_link_traversal(r, cur, chosen);
-
   return chosen;
+}
+
+
+// ============================================================
+//  NEAR-MINIMAL RANDOM (OBLIVIOUS) ROUTING
+//
+//  Same candidate collection as near_min_adaptive, but random selection
+//  among all valid candidates (min + non-min) instead of cost-based.
+// ============================================================
+static int accel_pick_near_min_random_port(const Router *r, const Flit *f,
+                                            int in_channel,
+                                            int cur, int target,
+                                            const vector<vector<int>> &dist)
+{
+  int cur_dist = dist[cur][target];
+  assert(cur_dist > 0);
+
+  int prev_router = -1;
+  if (in_channel >= 0 && in_channel < (int)gAccelInputPortSrc[cur].size())
+    prev_router = gAccelInputPortSrc[cur][in_channel];
+
+  int src_part = f->ph;
+  int k_remaining = accel_nm_effective_budget(f->nm_budget, cur, target, src_part);
+
+  int cur_part  = accel_router_part(cur);
+  int dest_part = accel_miss_target_part(target);
+
+  bool force_mc_mc = false;
+  if (accel_is_mc(cur) && accel_is_mc(target)) {
+    if (accel_hbm_col(accel_mc_idx(cur)) == accel_hbm_col(accel_mc_idx(target))) {
+      int cur_row = accel_hbm_row(accel_mc_idx(cur));
+      int tgt_row = accel_hbm_row(accel_mc_idx(target));
+      int mc_mc_dist = abs(cur_row - tgt_row);
+      int global_dist = dist[cur][target];
+      if (mc_mc_dist - global_dist <= k_remaining) {
+        force_mc_mc = true;
+      }
+    }
+  }
+
+  vector<int> dir_nb;
+  vector<vector<int>> dir_ports;
+  vector<int> dir_hop_type;
+
+  for (size_t i = 0; i < gHBMNetAccelAdj[cur].size(); i++) {
+    const AccelAdjEntry &e = gHBMNetAccelAdj[cur][i];
+    if (!accel_valid_miss_routing_out(cur, e.type)) continue;
+    
+    // 1. U-turn prevention
+    if (e.neighbor == prev_router && prev_router >= 0) continue;
+
+    int nb_dist = dist[e.neighbor][target];
+    if (nb_dist < 0) continue;
+
+    // 2. Distance-based classification
+    bool is_min   = (nb_dist == cur_dist - 1);
+    bool is_plus1 = (nb_dist == cur_dist     && k_remaining >= 1);
+    bool is_plus2 = (nb_dist == cur_dist + 1 && k_remaining >= 2);
+    if (!is_min && !is_plus1 && !is_plus2) continue;
+
+    int nb_part = accel_router_part(e.neighbor);
+
+    // 3. Directionality constraint for MC-MC and Xbar-Xbar
+    if (e.type == ACCEL_LINK_MC_MC || e.type == ACCEL_LINK_XBAR_XBAR) {
+      if (cur_part < dest_part && nb_part < cur_part) continue;
+      if (cur_part > dest_part && nb_part > cur_part) continue;
+      if (cur_part == dest_part && nb_part != dest_part) continue;
+    }
+    // Prevent U-turn along MC-MC links by forcing the direction
+    if (e.type == ACCEL_LINK_MC_MC && accel_is_mc(target)) {
+      if (accel_hbm_col(accel_mc_idx(cur)) == accel_hbm_col(accel_mc_idx(target))) {
+        int cur_row = accel_hbm_row(accel_mc_idx(cur));
+        int tgt_row = accel_hbm_row(accel_mc_idx(target));
+        int nb_row  = accel_hbm_row(accel_mc_idx(e.neighbor));
+        if (tgt_row > cur_row && nb_row < cur_row) continue;
+        if (tgt_row < cur_row && nb_row > cur_row) continue;
+      }
+    }
+
+    // 4. Xbar-MC link constraint
+    if (e.type == ACCEL_LINK_XBAR_MC) {
+      if (accel_is_mc(cur)) {
+        if (force_mc_mc) continue;
+
+        bool is_l2_sm = accel_is_xbar(target);
+        bool is_cross_col = accel_is_mc(target) && 
+            (accel_hbm_col(accel_mc_idx(cur)) != accel_hbm_col(accel_mc_idx(target)));
+        bool is_same_col_out_of_budget = accel_is_mc(target) && !is_cross_col && !force_mc_mc;
+        
+        if (!is_l2_sm && !is_cross_col && !is_same_col_out_of_budget) continue;
+      } 
+      else if (accel_is_xbar(cur)) {
+        if (accel_is_xbar(target)) continue;
+        if (accel_is_mc(target)) {
+          if (accel_hbm_col(accel_mc_idx(e.neighbor)) != accel_hbm_col(accel_mc_idx(target))) continue;
+          int tgt_row = accel_hbm_row(accel_mc_idx(target));
+          int nb_row  = accel_hbm_row(accel_mc_idx(e.neighbor));
+          int mc_mc_dist = abs(nb_row - tgt_row);
+          int total_extra_cost = mc_mc_dist + 1 - cur_dist;
+          if (total_extra_cost > k_remaining) continue;
+        }
+      }
+    }
+
+    int hop_type = is_min ? 0 : (is_plus1 ? 1 : 2);
+
+    int idx = -1;
+    for (size_t j = 0; j < dir_nb.size(); j++) {
+      if (dir_nb[j] == e.neighbor) { idx = (int)j; break; }
+    }
+    if (idx < 0) {
+      idx = (int)dir_nb.size();
+      dir_nb.push_back(e.neighbor);
+      dir_ports.push_back(vector<int>());
+      dir_hop_type.push_back(hop_type);
+    }
+    dir_ports[idx].push_back(e.port);
+  }
+
+  assert(!dir_nb.empty());
+
+
+  // Random selection
+  int chosen_idx = RandomInt((int)dir_nb.size() - 1);
+
+  if (dir_hop_type[chosen_idx] == 0) {
+    ++gAccelNearMinMinDecisions;
+  } else if (dir_hop_type[chosen_idx] == 1) {
+    f->nm_budget = f->nm_budget - 1;
+    f->nm_used = true;
+    ++gAccelNearMinNonMinDecisions;
+    gAccelNearMinDirCount[make_pair(cur, dir_nb[chosen_idx])]++;
+  } else {
+    f->nm_budget = f->nm_budget - 2;
+    f->nm_used = true;
+    ++gAccelNearMinNonMinDecisions;
+    ++gAccelNearMinPlus2Decisions;
+    gAccelNearMinDirCount[make_pair(cur, dir_nb[chosen_idx])]++;
+  }
+
+  vector<int> &ports = dir_ports[chosen_idx];
+  int chosen = ports[RandomInt(ports.size() - 1)];
+  accel_track_link_traversal(r, cur, chosen);
+  return chosen;
+}
+
+
+// ============================================================
+//  FABRIC FIXED MIN ROUTING
+//
+//  Deterministic min routing that always prefers MC-MC fabric paths
+//  over Xbar-Xbar chain when MC-MC min paths exist.
+//
+//  Priority at each hop:
+//    1. MC-MC min (stay in fabric, cur=MC)
+//    2. Xbar-MC min (enter fabric from Xbar)
+//    3. Other min (Xbar-Xbar chain)
+// ============================================================
+static int accel_pick_fixed_min_port(int cur, int target,
+                                             const vector<vector<int>> &dist)
+{
+  int cur_dist = dist[cur][target];
+  assert(cur_dist > 0);
+
+  vector<int> mc_mc_ports, xbar_mc_ports, other_ports;
+
+  for (size_t i = 0; i < gHBMNetAccelAdj[cur].size(); i++) {
+    const AccelAdjEntry &e = gHBMNetAccelAdj[cur][i];
+    if (!accel_valid_miss_routing_out(cur, e.type)) continue;
+    if (dist[e.neighbor][target] != cur_dist - 1) continue;  // not min
+
+    if      (e.type == ACCEL_LINK_MC_MC)   mc_mc_ports.push_back(e.port);
+    else if (e.type == ACCEL_LINK_XBAR_MC) xbar_mc_ports.push_back(e.port);
+    else                                   other_ports.push_back(e.port);
+  }
+
+  // Prefer MC-MC > Xbar-MC (entering fabric) > Xbar-Xbar
+  if (!mc_mc_ports.empty())  return mc_mc_ports[RandomInt(mc_mc_ports.size() - 1)];
+  if (!xbar_mc_ports.empty()) return xbar_mc_ports[RandomInt(xbar_mc_ports.size() - 1)];
+  assert(!other_ports.empty());
+  return other_ports[RandomInt(other_ports.size() - 1)];
 }
 
 
@@ -1429,7 +1732,7 @@ static int accel_pick_near_min_port(const Router *r, const Flit *f,
 //                  f->intm = intermediate router ID or MISS_MARKER
 //    Near-min:     f->nm_budget = remaining k budget
 //                  f->nm_used = true if near-min hop ever taken
-//                  f->ph = unused (0)
+//                  f->ph = src_part (source partition, for strict/relieved mode)
 //    Others:       f->ph = 0, f->intm = MISS_MARKER
 // ============================================================
 void hbmnet_accelsim_hybrid( const Router *r, const Flit *f, int in_channel,
@@ -1444,11 +1747,19 @@ void hbmnet_accelsim_hybrid( const Router *r, const Flit *f, int in_channel,
     }
 
     // Initialize per-routing-type fields
-    f->ph = 0;
     f->nm_budget = 0;
     f->nm_used = false;
-    if (gAccelHybridRouting == 5 && f->intm == ACCELSIM_MISS_MARKER) {
-      f->nm_budget = gAccelNearMinK;  // near-min k budget
+    f->ph = 0;
+    if ((gAccelHybridRouting == 5 || gAccelHybridRouting == 6) &&
+        f->intm == ACCELSIM_MISS_MARKER) {
+      // Store src_part in f->ph for strict/relieved mode gating
+      int src_router = gAccelNodeToRouter[f->src];
+      f->ph = accel_router_part(src_router);  // 0 for MC src (shouldn't happen)
+
+      // Remote-only: disable non-min for same-partition (local) access
+      int dest_part = accel_miss_target_part(accel_miss_target(f->dest));
+      bool is_remote = (f->ph != dest_part);
+      f->nm_budget = (!gAccelNearMinRemoteOnly || is_remote) ? gAccelNearMinK : 0;
     }
     // UGAL/Valiant: ph=0 means "decision not yet made"
     // (decision happens at first routing hop, not injection)
@@ -1545,6 +1856,22 @@ void hbmnet_accelsim_hybrid( const Router *r, const Flit *f, int in_channel,
       // accel_pick_near_min_port already calls accel_track_link_traversal
       outputs->AddRange(port, 1, gNumVCs - 1, 1);
       return;  // early return: tracking already done inside
+    }
+
+    case 6:  // near_min_random (same constraints as near_min_adaptive, random selection)
+    {
+      port = accel_pick_near_min_random_port(r, f, in_channel, cur, miss_target,
+                                             gHBMNetAccelDistMissFabric);
+      // accel_pick_near_min_random_port already calls accel_track_link_traversal
+      outputs->AddRange(port, 1, gNumVCs - 1, 1);
+      return;  // early return: tracking already done inside
+    }
+
+    case 7:  // fixed_min (prefer MC-MC fabric over Xbar-Xbar chain)
+    {
+      port = accel_pick_fixed_min_port(cur, miss_target,
+                                              gHBMNetAccelDistMissFabric);
+      break;
     }
 
     default:
