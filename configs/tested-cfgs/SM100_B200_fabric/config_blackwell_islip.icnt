@@ -111,7 +111,7 @@ internal_speedup  = 2.0;
 // HBM router internal speedup override (0.0 = use global internal_speedup).
 // Set > 0 to give HBM routers a faster crossbar so mc_hbm_bandwidth is the
 // true TSV bottleneck rather than the router crossbar.
-hbm_internal_speedup = 0.0;
+hbm_internal_speedup = 10.0;
 
 // Traffic
 traffic = uniform;
