@@ -1,7 +1,7 @@
-// $Id: iq_router.cpp 5263 2012-09-20 23:40:33Z dub $
+// $Id$
 
 /*
- Copyright (c) 2007-2012, Trustees of The Leland Stanford Junior University
+ Copyright (c) 2007-2015, Trustees of The Leland Stanford Junior University
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -306,7 +306,7 @@ bool IQRouter::_ReceiveFlits( )
 
       if(f->watch) {
 	*gWatchOut << GetSimTime() << " | " << FullName() << " | "
-		   << "Received flit " << (unsigned) f->id
+		   << "Received flit " << f->id
 		   << " from channel at input " << input
 		   << "." << endl;
       }
@@ -601,9 +601,41 @@ void IQRouter::_VCAllocEvaluate( )
 
     assert(!_noq || (setlist.size() == 1));
 
+    // Pre-scan: find the highest priority level that has at least one
+    // output VC with buffer credits.  When a higher-priority entry
+    // has non-full VCs, lower-priority entries (escape VC) are not
+    // submitted to the allocator at all — the flit waits for a
+    // higher-priority VC to become free instead of escaping.
+    // This is essential for allocators like iSLIP that ignore the
+    // priority field.
+    int max_avail_pri = numeric_limits<int>::min();
+    for(set<OutputSet::sSetElement>::const_iterator ps = setlist.begin();
+	ps != setlist.end(); ++ps) {
+      int const ps_port = ps->output_port;
+      if(ps_port < 0 || ps_port >= _outputs) continue;
+      BufferState const * const ps_buf = _next_buf[ps_port];
+      int ps_vs = ps->vc_start, ps_ve = ps->vc_end;
+      if(_noq && _noq_next_output_port[input][vc] >= 0) {
+	ps_vs = _noq_next_vc_start[input][vc];
+	ps_ve = _noq_next_vc_end[input][vc];
+      }
+      for(int ps_vc = ps_vs; ps_vc <= ps_ve; ++ps_vc) {
+	if(!ps_buf->IsFullFor(ps_vc)) {
+	  if(ps->pri > max_avail_pri)
+	    max_avail_pri = ps->pri;
+	  break;
+	}
+      }
+    }
+
     for(set<OutputSet::sSetElement>::const_iterator iset = setlist.begin();
 	iset != setlist.end();
 	++iset) {
+
+      // Skip lower-priority entries when a higher-priority entry has
+      // at least one available VC (escape VC suppression for iSLIP).
+      if(iset->pri < max_avail_pri)
+	continue;
 
       int const out_port = iset->output_port;
       assert((out_port >= 0) && (out_port < _outputs));
@@ -1044,7 +1076,7 @@ void IQRouter::_SWHoldUpdate( )
     
     int const expanded_output = item.second.second;
     
-    if(expanded_output >= 0 && ( _output_buffer_size==-1 || _output_buffer[expanded_output].size()<size_t(_output_buffer_size))) {
+    if(expanded_output >= 0 && ( _output_buffer_size==-1 || _output_buffer[expanded_output/_output_speedup].size()<size_t(_output_buffer_size))) {
       
       assert(_switch_hold_in[expanded_input] == expanded_output);
       assert(_switch_hold_out[expanded_output] == expanded_input);
@@ -1193,7 +1225,7 @@ void IQRouter::_SWHoldUpdate( )
     } else {
       //when internal speedup >1.0, the buffer stall stats may not be accruate
       assert((expanded_output == STALL_BUFFER_FULL) ||
-	     (expanded_output == STALL_BUFFER_RESERVED) || !( _output_buffer_size==-1 || _output_buffer[expanded_output].size()<size_t(_output_buffer_size)));
+	     (expanded_output == STALL_BUFFER_RESERVED) || !( _output_buffer_size==-1 || _output_buffer[expanded_output/_output_speedup].size()<size_t(_output_buffer_size)));
 
       int const held_expanded_output = _switch_hold_in[expanded_input];
       assert(held_expanded_output >= 0);

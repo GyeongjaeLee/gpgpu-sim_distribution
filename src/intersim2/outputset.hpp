@@ -1,7 +1,7 @@
-// $Id: outputset.hpp 5188 2012-08-30 00:31:31Z dub $
+// $Id$
 
 /*
- Copyright (c) 2007-2012, Trustees of The Leland Stanford Junior University
+ Copyright (c) 2007-2015, Trustees of The Leland Stanford Junior University
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -56,9 +56,15 @@ private:
   set<sSetElement> _outputs;
 };
 
-inline bool operator<(const OutputSet::sSetElement & se1, 
+inline bool operator<(const OutputSet::sSetElement & se1,
 	       const OutputSet::sSetElement & se2) {
-  return se1.pri > se2.pri; // higher priorities first!
+  if(se1.pri != se2.pri)
+    return se1.pri > se2.pri; // higher priorities first!
+  if(se1.output_port != se2.output_port)
+    return se1.output_port < se2.output_port;
+  if(se1.vc_start != se2.vc_start)
+    return se1.vc_start < se2.vc_start;
+  return se1.vc_end < se2.vc_end;
 }
 
 #endif

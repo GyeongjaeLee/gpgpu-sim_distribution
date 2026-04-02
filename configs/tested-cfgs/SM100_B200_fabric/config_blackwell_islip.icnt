@@ -41,7 +41,7 @@ ugal_intm_select = 0;
 
 // Hit rate: fraction of flits that take the hit path (Xbar→HBM direct)
 // 0.0 = all miss (all go through MC), 1.0 = all hit (no MC involvement)
-baseline_ratio = 0.2;
+baseline_ratio = 0.0;
 // Miss routing sub-function for hybrid: baseline/min_adaptive/near_min_adaptive/ugal/valiant/min_oblivious
 hybrid_routing = near_min_adaptive;
 
@@ -49,13 +49,13 @@ hybrid_routing = near_min_adaptive;
 //   k=1: allows one +1 hop (dist stays same) — cannot do +2 hop
 //   k=2: allows one +2 hop (dist increases by 1, 2x penalty) OR one +1 hop
 //        (+1 hop twice is blocked by u-turn prevention in practice)
-near_min_k = 2;
+near_min_k = 1;
 
 // Near-min penalty multiplier: scales the latency penalty for near-min directions.
 // 0.0 = no penalty (always pick least congested), 1.0 = default, >1.0 = more conservative
 // +1 hop cost: sat + penalty * lat_norm * (1 + sat)
 // +2 hop cost: sat + 2 * penalty * lat_norm * (1 + sat)
-near_min_penalty = 1.0;
+near_min_penalty = 0.5;
 
 // Near-min strict mode: controls where non-min hops are allowed
 //   0 = relieved: non-min blocked only when cur partition is outside the natural
@@ -73,18 +73,18 @@ inject_latency = 50;
 eject_latency = 50;
 
 // Link latencies (cycles)
-xbar_xbar_latency = 185;
+xbar_xbar_latency = 150;
 xbar_hbm_latency = 30;    // hit path: Xbar ↔ HBM
-xbar_mc_latency = 115;      // miss path: Xbar ↔ MC
-mc_hbm_latency = 35;      // miss path: MC ↔ HBM (models DRAM access)
-mc_mc_latency = 85;         // miss path fabric: MC ↔ MC
+xbar_mc_latency = 150;      // miss path: Xbar ↔ MC
+mc_hbm_latency = 100;      // miss path: MC ↔ HBM (models DRAM access)
+mc_mc_latency = 150;         // miss path fabric: MC ↔ MC
 
 // Link bandwidths (parallel ports per link pair)
-xbar_xbar_bandwidth = 70;
-xbar_hbm_bandwidth = 7;   // hit path
-xbar_mc_bandwidth = 7;    // miss path entry
-mc_hbm_bandwidth = 7;     // equal xbar_hbm_bandwidth for fairness
-mc_mc_bandwidth = 7;       // fabric
+xbar_xbar_bandwidth = 28;
+xbar_hbm_bandwidth = 8;   // hit path
+xbar_mc_bandwidth = 8;    // miss path entry
+mc_hbm_bandwidth = 12;     // equal xbar_hbm_bandwidth for fairness
+mc_mc_bandwidth = 10;       // fabric
 
 // Flow control
 num_vcs     = 4;

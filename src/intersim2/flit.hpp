@@ -1,7 +1,7 @@
-// $Id: flit.hpp 5188 2012-08-30 00:31:31Z dub $
+// $Id$
 
 /*
- Copyright (c) 2007-2012, Trustees of The Leland Stanford Junior University
+ Copyright (c) 2007-2015, Trustees of The Leland Stanford Junior University
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -57,8 +57,8 @@ public:
   int  itime;
   int  atime;
 
-  unsigned long long  id;
-  unsigned long long  pid;
+  int  id;
+  int  pid;
 
   bool record;
 

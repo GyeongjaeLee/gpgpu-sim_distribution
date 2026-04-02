@@ -12,3 +12,4 @@ Deepbench_nvidia_tencore:conv_bench-tencore	0.97
 Deepbench_nvidia_tencore:gemm_bench-tencore	0.78
 Deepbench_nvidia_tencore:rnn_bench-tencore	0.94
 GPU_Microbenchmark:mem_bw	0
+moe_benchmark:moe_layer_benchmark.py	0
