@@ -15,26 +15,27 @@ Job names are auto-abbreviated, e.g.:
 Usage examples:
 
   # Single structure/bandwidth, multiple routings
-  python run_accelsim.py \\
-      --benchmark rodinia-3.1:bfs-rodinia-3.1 \\
-      --structure B100_Global \\
-      --bandwidth B200+HBM3e \\
-      --routing baseline min_adaptive near_min_adaptive \\
+  python run_accelsim.py \
+      --benchmark rodinia-3.1:bfs-rodinia-3.1 \
+      --structure B100_Global \
+      --bandwidth B200+HBM3e \
+      --routing baseline min_adaptive near_min_adaptive \
+      --near-min-k 1 2 \
       --near-min-p 0.0 1.0
 
-  # Multiple structures and bandwidths
-  python run_accelsim.py \\
-      --benchmark polybench:polybench-gemm \\
-      --structure B100_Local B100_Global H100 \\
-      --bandwidth B200+HBM3e Shoreline_1x \\
-      --routing baseline near_min_adaptive \\
-      --near-min-p 0.0
+  # Multiple structures and bandwidths with random and fixed min
+  python run_accelsim.py \
+      --benchmark polybench:polybench-gemm \
+      --structure B100_Local B100_Global H100 \
+      --bandwidth B200+HBM3e Shoreline_1x \
+      --routing fixed_min near_min_random \
+      --near-min-k 2
 
   # All configs from experiments.csv (dry-run to preview)
-  python run_accelsim.py \\
-      --benchmark GPU_Microbenchmark:mem_bw \\
-      --all-configs \\
-      --routing baseline \\
+  python run_accelsim.py \
+      --benchmark GPU_Microbenchmark:mem_bw \
+      --all-configs \
+      --routing baseline \
       --dry-run
 """
 
@@ -63,15 +64,21 @@ STRUCTURES, BANDWIDTHS = load_experiments(os.path.join(_HERE, "experiments.csv")
 
 ROUTING_CHOICES = [
     "baseline", "min_oblivious", "min_adaptive",
-    "near_min_adaptive", "ugal", "valiant",
+    "near_min_adaptive", "near_min_random", "fixed_min", 
+    "ugal", "valiant",
 ]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def routing_to_key(routing: str, near_min_p: Optional[float] = None) -> str:
+def routing_to_key(routing: str, near_min_k: Optional[int] = None, near_min_p: Optional[float] = None) -> str:
+    """Generate a unique directory key based on routing and its parameters."""
     if routing == "near_min_adaptive":
+        k = near_min_k if near_min_k is not None else 2
         p = near_min_p if near_min_p is not None else 1.0
-        return f"near_min_p{p:.1f}"
+        return f"{routing}_nmk{k}_nmp{p:.1f}"
+    elif routing == "near_min_random":
+        k = near_min_k if near_min_k is not None else 2
+        return f"{routing}_nmk{k}"
     return routing
 
 
@@ -145,11 +152,13 @@ def main() -> None:
     ap.add_argument("--benchmark", required=True,
                     help="Benchmark spec, e.g. rodinia-3.1:bfs-rodinia-3.1")
     ap.add_argument("--structure", nargs="+", choices=list(STRUCTURES),
-                    metavar="STRUCT", required=True)
+                    metavar="STRUCT", required=False)
     ap.add_argument("--bandwidth", nargs="+", choices=list(BANDWIDTHS),
-                    metavar="BW", required=True)
+                    metavar="BW", required=False)
     ap.add_argument("--routing", nargs="+", choices=ROUTING_CHOICES,
                     metavar="ROUTING", default=["baseline"])
+    ap.add_argument("--near-min-k", nargs="+", type=int, metavar="K",
+                    default=[2])
     ap.add_argument("--near-min-p", nargs="+", type=float, metavar="P",
                     default=[1.0])
     ap.add_argument("--all-configs", action="store_true",
@@ -162,17 +171,26 @@ def main() -> None:
         structures = list(STRUCTURES)
         bandwidths = list(BANDWIDTHS)
     else:
+        if not args.structure or not args.bandwidth:
+            ap.error("Specify --structure and --bandwidth, or use --all-configs")
         structures = args.structure
         bandwidths = args.bandwidth
 
     # Build routing key list
-    routing_keys: list = []
+    routing_keys: list[str] = []
     for r in args.routing:
         if r == "near_min_adaptive":
-            for p in args.near_min_p:
-                routing_keys.append(routing_to_key(r, p))
+            for k in args.near_min_k:
+                for p in args.near_min_p:
+                    routing_keys.append(routing_to_key(r, near_min_k=k, near_min_p=p))
+        elif r == "near_min_random":
+            for k in args.near_min_k:
+                routing_keys.append(routing_to_key(r, near_min_k=k))
         else:
             routing_keys.append(r)
+
+    # Remove any duplicates
+    routing_keys = list(dict.fromkeys(routing_keys))
 
     # Load hit rates
     hitrates = load_hitrates(HITRATE_CSV)

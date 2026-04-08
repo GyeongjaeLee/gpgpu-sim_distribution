@@ -87,8 +87,8 @@ mc_hbm_bandwidth = 12;     // equal xbar_hbm_bandwidth for fairness
 mc_mc_bandwidth = 10;       // fabric
 
 // Flow control
-num_vcs     = 4;
-vc_buf_size = 128;
+num_vcs     = 2;
+vc_buf_size = 310;
 input_buffer_size = 512;
 ejection_buffer_size = 512;
 boundary_buffer_size = 512;

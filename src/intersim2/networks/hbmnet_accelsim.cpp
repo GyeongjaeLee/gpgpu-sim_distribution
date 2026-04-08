@@ -1697,6 +1697,20 @@ static int accel_pick_near_min_random_port(const Router *r, const Flit *f,
       }
     }
 
+    // 5. Forward-escape filter for non-min hops.
+    //    When a non-min hop is taken (early fabric entry, etc.), the escape path
+    //    (VC 0 baseline) from the neighbor must still make forward progress on the
+    //    baseline path compared to the current router.  If the escape from the
+    //    neighbor would land at a point >= current baseline distance to target,
+    //    it means a stuck packet would be forced to escape *backward* through the
+    //    Xbar chain, creating extra load on the escape VC and risking deadlock.
+    if (!is_min) {
+      int esc_from_nb = accel_get_miss_baseline_next(e.neighbor, target);
+      if (esc_from_nb >= 0 &&
+          gHBMNetAccelDistMissBaseline[esc_from_nb][target] >=
+          gHBMNetAccelDistMissBaseline[cur][target]) continue;
+    }
+
     int hop_type = is_min ? 0 : (is_plus1 ? 1 : 2);
 
     int idx = -1;
@@ -1733,8 +1747,19 @@ static int accel_pick_near_min_random_port(const Router *r, const Flit *f,
     gAccelNearMinDirCount[make_pair(cur, dir_nb[chosen_idx])]++;
   }
 
+  // Among parallel ports in the chosen direction, start from a random port and
+  // cycle through (round-robin) until finding one with credit on data VCs (VC 1..N-1).
+  // This avoids iSLIP allocation bias from exposing multiple ports for the same direction,
+  // while still avoiding a single hot parallel port.
+  // If no port has credit, the last candidate is returned and the preamble's esc_port VC 0 acts as fallback.
   vector<int> &ports = dir_ports[chosen_idx];
-  int chosen = ports[RandomInt(ports.size() - 1)];
+  int num_ports = (int)ports.size();
+  int start = RandomInt(num_ports - 1);
+  int chosen = ports[start];
+  for (int i = 1; i < num_ports; i++) {
+    if (r->GetUsedCredit(chosen) < gAccelPortBufCapacity) break;
+    chosen = ports[(start + i) % num_ports];
+  }
   accel_track_link_traversal(r, cur, chosen);
   return chosen;
 }
@@ -1919,7 +1944,8 @@ void hbmnet_accelsim_hybrid( const Router *r, const Flit *f, int in_channel,
     {
       port = accel_pick_near_min_random_port(r, f, in_channel, cur, miss_target,
                                              gHBMNetAccelDistMissFabric);
-      // accel_pick_near_min_random_port already calls accel_track_link_traversal
+      // accel_pick_near_min_random_port already calls accel_track_link_traversal.
+      // Returns a single port (credit-cycled among parallel ports in chosen direction).
       outputs->AddRange(port, 1, gNumVCs - 1, 1);
       return;  // early return: tracking already done inside
     }
