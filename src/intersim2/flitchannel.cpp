@@ -39,6 +39,7 @@
 
 #include "router.hpp"
 #include "globals.hpp"
+#include "networks/hbmnet_accelsim.hpp"
 
 // ----------------------------------------------------------------------
 //  $Author: jbalfour $
@@ -64,6 +65,10 @@ void FlitChannel::SetSink(Router const * const router, int port) {
 void FlitChannel::Send(Flit * f) {
   if(f) {
     ++_active[f->cl];
+    if(gHBMNetAccelK > 0 && _routerSource && _routerSink) {
+      hbmnet_accelsim_count_link_traversal(
+        _routerSource->GetID(), _routerSink->GetID());
+    }
   } else {
     ++_idle;
   }

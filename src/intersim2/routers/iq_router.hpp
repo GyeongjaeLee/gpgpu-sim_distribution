@@ -1,7 +1,7 @@
-// $Id: iq_router.hpp 5263 2012-09-20 23:40:33Z dub $
+// $Id$
 
 /*
- Copyright (c) 2007-2012, Trustees of The Leland Stanford Junior University
+ Copyright (c) 2007-2015, Trustees of The Leland Stanford Junior University
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -164,6 +164,7 @@ public:
   void Display( ostream & os = cout ) const;
 
   virtual int GetUsedCredit(int o) const;
+  virtual int GetUsedCreditVC(int o, int vc) const;
   virtual int GetBufferOccupancy(int i) const;
 
 #ifdef TRACK_BUFFERS

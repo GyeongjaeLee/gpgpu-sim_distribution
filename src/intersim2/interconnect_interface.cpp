@@ -237,6 +237,9 @@ void* InterconnectInterface::Pop(unsigned deviceID)
 void InterconnectInterface::Advance()
 {
   _traffic_manager->_Step();
+  if (_icnt_config->GetStr("topology") == "hbmnet_accelsim") {
+    hbmnet_accelsim_tick();
+  }
 }
 
 bool InterconnectInterface::Busy() const

@@ -87,10 +87,6 @@ extern int gHBMNetAccelP;          // number of Xbars
 extern int gHBMNetAccelHPS;        // hbm_per_side
 extern int gHBMNetAccelSMPerXbar;  // SMs per Xbar (concentration)
 
-// UGAL routing decision counters
-extern long long gAccelUGALMinDecisions;
-extern long long gAccelUGALNonMinDecisions;
-
 // Escape VC usage counters
 extern long long gAccelEscapeVCEjects;
 extern long long gAccelTotalEjects;
@@ -109,6 +105,14 @@ extern long long gAccelLinkTypeTraversals[5];
 
 // Reset all routing statistics
 void hbmnet_accelsim_reset_stats();
+
+// Per-cycle tick: must be called once per simulation cycle after stats reset.
+// Drives windowed max link utilization computation.
+void hbmnet_accelsim_tick();
+
+// Called from FlitChannel::Send() to count actual link traversals.
+// src_router and dst_router are the router IDs at each end of the channel.
+void hbmnet_accelsim_count_link_traversal(int src_router, int dst_router);
 
 // Print link utilization and near-min direction stats
 void hbmnet_accelsim_print_link_stats();
