@@ -1,7 +1,7 @@
-// $Id$
+// $Id: router.hpp 5188 2012-08-30 00:31:31Z dub $
 
 /*
- Copyright (c) 2007-2015, Trustees of The Leland Stanford Junior University
+ Copyright (c) 2007-2012, Trustees of The Leland Stanford Junior University
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 #define _ROUTER_HPP_
 
 #include <string>
+#include <vector>
 
 #include "timed_module.hpp"
 #include "flit.hpp"
@@ -64,8 +65,6 @@ protected:
 
   int _crossbar_delay;
   int _credit_delay;
-
-  int _channel_speedup;
   
   vector<FlitChannel *>   _input_channels;
   vector<CreditChannel *> _input_credits;
@@ -93,10 +92,12 @@ protected:
 
 public:
   Router( const Configuration& config,
-	  Module *parent, const string & name, int id, int inputs, int outputs, int channel_speedup = 1 );
+	  Module *parent, const string & name, int id,
+	  int inputs, int outputs );
 
   static Router *NewRouter( const Configuration& config,
-			    Module *parent, const string & name, int id, int inputs, int outputs, int channel_speedup = 1 );
+			    Module *parent, const string & name, int id,
+			    int inputs, int outputs );
 
   virtual void AddInputChannel( FlitChannel *channel, CreditChannel *backchannel );
   virtual void AddOutputChannel( FlitChannel *channel, CreditChannel *backchannel );
@@ -118,7 +119,7 @@ public:
   bool IsFaultyOutput( int c ) const;
 
   inline int GetID( ) const {return _id;}
-  inline int GetSpeedup( ) const {return _channel_speedup;}
+
 
   virtual int GetUsedCredit(int o) const = 0;
   virtual int GetBufferOccupancy(int i) const = 0;

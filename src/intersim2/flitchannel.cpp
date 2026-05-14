@@ -71,26 +71,21 @@ void FlitChannel::Send(Flit * f) {
 }
 
 void FlitChannel::ReadInputs() {
-  for (size_t i = 0; i < _input.size(); ++i) {
-    Flit const * const & f = _input[i];
-    if(f && f->watch) {
-      *gWatchOut << GetSimTime() << " | " << FullName() << " | "
-          << "Beginning channel traversal for flit " << f->id
-          << " with delay " << _delay
-          << "." << endl;
-    }
+  Flit const * const & f = _input;
+  if(f && f->watch) {
+    *gWatchOut << GetSimTime() << " | " << FullName() << " | "
+	       << "Beginning channel traversal for flit " << f->id
+	       << " with delay " << _delay
+	       << "." << endl;
   }
   Channel<Flit>::ReadInputs();
 }
 
 void FlitChannel::WriteOutputs() {
   Channel<Flit>::WriteOutputs();
-  for (size_t i = 0; i < _output.size(); ++i) {
-    Flit const * const & f = _output[i];
-    if(f && f->watch) {
-      *gWatchOut << GetSimTime() << " | " << FullName() << " | "
-          << "Completed channel traversal for flit " << f->id
-          << "." << endl;
-    }
+  if(_output && _output->watch) {
+    *gWatchOut << GetSimTime() << " | " << FullName() << " | "
+	       << "Completed channel traversal for flit " << _output->id
+	       << "." << endl;
   }
 }

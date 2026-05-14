@@ -67,8 +67,7 @@ class IQRouter : public Router {
   int _vc_alloc_delay;
   int _sw_alloc_delay;
   
-  // support multiple flits transfer
-  multimap<int, Flit *> _in_queue_flits;
+  map<int, Flit *> _in_queue_flits;
 
   deque<pair<int, pair<Credit *, int> > > _proc_credits;
 
@@ -152,7 +151,8 @@ class IQRouter : public Router {
 public:
 
   IQRouter( Configuration const & config,
-	    Module *parent, string const & name, int id, int inputs, int outputs, int channel_speedup = 1 );
+	    Module *parent, string const & name, int id,
+	    int inputs, int outputs );
   
   virtual ~IQRouter( );
   

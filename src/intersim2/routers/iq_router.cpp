@@ -48,8 +48,8 @@
 #include "buffer_monitor.hpp"
 
 IQRouter::IQRouter( Configuration const & config, Module *parent, 
-		    string const & name, int id, int inputs, int outputs, int channel_speedup )
-: Router( config, parent, name, id, inputs, outputs, channel_speedup ), _active(false)
+		    string const & name, int id, int inputs, int outputs )
+: Router( config, parent, name, id, inputs, outputs ), _active(false)
 {
   _vcs         = config.GetInt( "num_vcs" );
 
@@ -297,25 +297,21 @@ bool IQRouter::_ReceiveFlits( )
 {
   bool activity = false;
   for(int input = 0; input < _inputs; ++input) { 
-    FlitChannel * channel = _input_channels[input];
-    int bandwidth = channel->GetBandwidth();
-    for (int i = 0; i < bandwidth; ++i) {
-      Flit * const f = channel->Receive();
-      if(f) {
+    Flit * const f = _input_channels[input]->Receive();
+    if(f) {
 
 #ifdef TRACK_FLOWS
-        ++_received_flits[f->cl][input];
+      ++_received_flits[f->cl][input];
 #endif
 
-        if(f->watch) {
-    *gWatchOut << GetSimTime() << " | " << FullName() << " | "
-        << "Received flit " << f->id
-        << " from channel at input " << input
-        << "." << endl;
-        }
-        _in_queue_flits.insert(make_pair(input, f));
-        activity = true;
+      if(f->watch) {
+	*gWatchOut << GetSimTime() << " | " << FullName() << " | "
+		   << "Received flit " << (unsigned) f->id
+		   << " from channel at input " << input
+		   << "." << endl;
       }
+      _in_queue_flits.insert(make_pair(input, f));
+      activity = true;
     }
   }
   return activity;
@@ -325,15 +321,11 @@ bool IQRouter::_ReceiveCredits( )
 {
   bool activity = false;
   for(int output = 0; output < _outputs; ++output) {  
-    CreditChannel * channel = _output_credits[output];
-    int bandwidth = channel->GetBandwidth();
-    for (int i = 0; i < bandwidth; ++i) {
-      Credit * const c = _output_credits[output]->Receive();
-      if(c) {
-        _proc_credits.push_back(make_pair(GetSimTime() + _credit_delay, 
-  					make_pair(c, output)));
-        activity = true;
-      }
+    Credit * const c = _output_credits[output]->Receive();
+    if(c) {
+      _proc_credits.push_back(make_pair(GetSimTime() + _credit_delay, 
+					make_pair(c, output)));
+      activity = true;
     }
   }
   return activity;
@@ -346,7 +338,7 @@ bool IQRouter::_ReceiveCredits( )
 
 void IQRouter::_InputQueuing( )
 {
-  for(multimap<int, Flit *>::const_iterator iter = _in_queue_flits.begin();
+  for(map<int, Flit *>::const_iterator iter = _in_queue_flits.begin();
       iter != _in_queue_flits.end();
       ++iter) {
 
@@ -1052,7 +1044,7 @@ void IQRouter::_SWHoldUpdate( )
     
     int const expanded_output = item.second.second;
     
-    if(expanded_output >= 0 && ( _output_buffer_size==-1 || _output_buffer[expanded_output/_output_speedup].size()<size_t(_output_buffer_size))) {
+    if(expanded_output >= 0 && ( _output_buffer_size==-1 || _output_buffer[expanded_output].size()<size_t(_output_buffer_size))) {
       
       assert(_switch_hold_in[expanded_input] == expanded_output);
       assert(_switch_hold_out[expanded_output] == expanded_input);
@@ -1201,7 +1193,7 @@ void IQRouter::_SWHoldUpdate( )
     } else {
       //when internal speedup >1.0, the buffer stall stats may not be accruate
       assert((expanded_output == STALL_BUFFER_FULL) ||
-	     (expanded_output == STALL_BUFFER_RESERVED) || !( _output_buffer_size==-1 || _output_buffer[expanded_output/_output_speedup].size()<size_t(_output_buffer_size)));
+	     (expanded_output == STALL_BUFFER_RESERVED) || !( _output_buffer_size==-1 || _output_buffer[expanded_output].size()<size_t(_output_buffer_size)));
 
       int const held_expanded_output = _switch_hold_in[expanded_input];
       assert(held_expanded_output >= 0);
@@ -2244,31 +2236,27 @@ void IQRouter::_OutputQueuing( )
 // write outputs
 //------------------------------------------------------------------------------
 
-
 void IQRouter::_SendFlits( )
 {
   for ( int output = 0; output < _outputs; ++output ) {
-    FlitChannel * channel = _output_channels[output];
-    int bandwidth = channel->GetBandwidth();
-    for (int i = 0; i < bandwidth; ++i) {
-      if ( !_output_buffer[output].empty( ) ) {
-        Flit * const f = _output_buffer[output].front( );
-        assert(f);
-        _output_buffer[output].pop( );
+    if ( !_output_buffer[output].empty( ) ) {
+      Flit * const f = _output_buffer[output].front( );
+      assert(f);
+      _output_buffer[output].pop( );
 
-  #ifdef TRACK_FLOWS
-        ++_sent_flits[f->cl][output];
-  #endif
-        if(f->watch)
-    *gWatchOut << GetSimTime() << " | " << FullName() << " | "
-          << "Sending flit " << f->id
-          << " to channel at output " << output
-          << "." << endl;
-        if(gTrace) {
-    cout << "Outport " << output << endl << "Stop Mark" << endl;
-        }
-        _output_channels[output]->Send( f );
+#ifdef TRACK_FLOWS
+      ++_sent_flits[f->cl][output];
+#endif
+
+      if(f->watch)
+	*gWatchOut << GetSimTime() << " | " << FullName() << " | "
+		    << "Sending flit " << f->id
+		    << " to channel at output " << output
+		    << "." << endl;
+      if(gTrace) {
+	cout << "Outport " << output << endl << "Stop Mark" << endl;
       }
+      _output_channels[output]->Send( f );
     }
   }
 }
@@ -2276,19 +2264,14 @@ void IQRouter::_SendFlits( )
 void IQRouter::_SendCredits( )
 {
   for ( int input = 0; input < _inputs; ++input ) {
-    CreditChannel * channel = _input_credits[input];
-    int bandwidth = channel->GetBandwidth();
-    for (int i = 0; i < bandwidth; ++i) {
-      if ( !_credit_buffer[input].empty( ) ) {
-        Credit * const c = _credit_buffer[input].front( );
-        assert(c);
-        _credit_buffer[input].pop( );
-        _input_credits[input]->Send( c );
-      }
+    if ( !_credit_buffer[input].empty( ) ) {
+      Credit * const c = _credit_buffer[input].front( );
+      assert(c);
+      _credit_buffer[input].pop( );
+      _input_credits[input]->Send( c );
     }
   }
 }
-
 
 
 //------------------------------------------------------------------------------
