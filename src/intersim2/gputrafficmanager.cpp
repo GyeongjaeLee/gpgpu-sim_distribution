@@ -34,6 +34,10 @@
 #include "globals.hpp"
 #include "networks/gpunet.hpp"
 
+extern int gNSM;
+extern int gSMPerPart;
+extern int gL2PerPart;
+
 GPUTrafficManager::GPUTrafficManager( const Configuration &config, const vector<Network *> &net)
 :TrafficManager(config, net)
 {

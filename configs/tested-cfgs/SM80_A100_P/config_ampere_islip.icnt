@@ -27,17 +27,17 @@ n_l2 = 160;    // L2 sub-partitions (gpgpu_n_mem * gpgpu_n_sub_partition_per_mch
 //   units[0]=2: 2 SMs per TPC
 //   units[1]=7: 7 TPCs per GPC (last GPC: 6 TPCs)
 l     = 2;
-units = {2, 7};
+units = {2,7};
 
 // Parallel ports per SM-side upward link
 //   ports[0]=2: TPC -> GPC
 //   ports[1]=12: GPC -> Crossbar
-ports = {2, 12};
+ports = {2,12};
 
 // Wire latency (cycles) per SM-side link level
 //   latency[0]: TPC -> GPC
 //   latency[1]: GPC -> Crossbar
-latency = {10, 25};
+latency = {10,25};
 
 // L2-side hierarchy: 1 level (L2Slice)
 //   l2_units[0]=2: 2 L2 nodes per L2Slice
