@@ -238,6 +238,9 @@ protected:
 
   bool _print_csv_results;
 
+  int _trace_flit_routes;
+  int _trace_flit_max;
+
   //flits to watch
   ostream * _stats_out;
 

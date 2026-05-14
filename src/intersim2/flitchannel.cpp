@@ -39,6 +39,7 @@
 
 #include "router.hpp"
 #include "globals.hpp"
+#include "networks/gpunet.hpp"
 
 // ----------------------------------------------------------------------
 //  $Author: jbalfour $
@@ -64,6 +65,9 @@ void FlitChannel::SetSink(Router const * const router, int port) {
 void FlitChannel::Send(Flit * f) {
   if(f) {
     ++_active[f->cl];
+    if (_routerSource && _routerSink) {
+      gpunet_count_link_traversal(_routerSource->GetID(), _routerSink->GetID());
+    }
   } else {
     ++_idle;
   }

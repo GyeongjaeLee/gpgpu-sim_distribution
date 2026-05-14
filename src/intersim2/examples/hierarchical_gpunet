@@ -1,85 +1,109 @@
-// Arch	  SM	TPC	GPC	Part.	L2slices  L2size  MemCtrl
-// GP100	60	30	6	  1	    8(512KB?) 4MB     8(512bit)
-// GV100	84	42	6	  1	    32(96KB)  6MB     8(512bit)
-// GA100	128	64	8	  2	    96(512KB) 48MB    12(512bit)
-// GH100	144	72	8	  2	           60MB    12(512bit)
+// GPU on-chip network topology reference configurations
 
-// GV100
-// Topology
+// A100 node mapping:
+//   SM side:  108 SMs -> 54 TPCs (2 SM/TPC) -> 8 GPCs (7 TPC/GPC, ceil) -> Crossbar
+//   L2 side:  160 L2 nodes -> 80 L2Slices (2 node/Slice) -> Crossbar
+//   Partition: 2 (54 SM + 80 L2 per partition)
+
 topology = gpunet;
-l = 3;
-// this must match the sum of n_shader and n_mem in gpgpu_sim.config
-shader = 84;
-l2slice = 32;
-// Assume partitions are uniformly sized
-use_partition = 0;
-units = {2,7,6};
-speedups = {1,2,14,1};
-interpartition_speedup = 28;
+
+// Total node counts
+n_sm    = 108;   // SM (shader) nodes
+n_l2    = 160;   // L2 slice nodes
+
+// SM-side hierarchy: 2 intermediate levels (TPC, GPC)
+//   Level 0 (TPC): units[0]=2  -> 2 SMs per TPC
+//   Level 1 (GPC): units[1]=7  -> 7 TPCs per GPC (ceil: last GPC may have fewer)
+l      = 2;
+units  = {2, 7};
+
+// Parallel ports per upward SM-side link
+//   ports[0]=2: TPC -> GPC: 2 port
+//   ports[1]=12: GPC -> Crossbar: 12 ports
+ports  = {2, 12};
+
+// Wire latency (cycles) per SM-side link level
+//   latency[0]: TPC -> GPC
+//   latency[1]: GPC -> Crossbar
+latency = {10, 25};
+
+// L2-side hierarchy: 1 intermediate level (L2Slice grouping)
+//   Level 0 (L2Slice): l2_units[0]=2 -> 2 L2 nodes per L2Slice
+l2_l      = 1;
+l2_units  = {2};
+
+// Parallel ports per upward L2-side link
+//   l2_ports[0]=2: L2Node -> L2Slice: 2 port
+l2_ports  = {2};
+
+// Wire latency (cycles) per L2-side link level
+//   l2_latency[0]: L2Node -> L2Slice -> Crossbar
+l2_latency = {25};
+
+// Partition: 2 partitions (A100-style)
+use_partition         = 1;
+n_partition           = 2;
+interpartition_ports  = 14;
+interpartition_latency = 75;
+
+inj_lat = 10;
+ej_lat = 10;
 
 // Routing
 routing_function = hierarchical;
 
-router = iq;
+// Router architecture
+router       = iq;
 vc_allocator = islip;
 sw_allocator = islip;
-alloc_iters = 1;
+alloc_iters  = 1;
 
-input_speedup = 1;
-output_speedup = 1;
-internal_speedup = 1.0;
-
+input_speedup    = 1;
+output_speedup   = 1;
+internal_speedup = 2.0;
 
 vc_alloc_delay = 1;
 sw_alloc_delay = 1;
-routing_delay = 0;
-credit_delay = 0;
+routing_delay  = 0;
+credit_delay   = 0;
 
 // Flow control
-// GPGPU-Sim uses 1 VC by default
-num_vcs = 1;
+num_vcs    = 1;
 vc_buf_size = 256;
-
-// Note that setting this to 0 allows channels with enough bandwidth
-// to transfer more flits than packet_length
-// which means more than 1 packets in a single vc can exist
 wait_for_tail_credit = 0;
 
-// Traffic
-traffic = gpu;
+// Traffic (standalone simulation mode)
+traffic           = gpu;
+subnets           = 2;
+use_read_write    = 1;
+write_fraction    = 0.5;
 
-subnets = 2;
-
-use_read_write = 1;
-
-write_fraction = 0.5;
-
-read_request_subnet = 0;
-read_reply_subnet = 1;
+read_request_subnet  = 0;
+read_reply_subnet    = 1;
 write_request_subnet = 0;
-write_reply_subnet = 1;
+write_reply_subnet   = 1;
 
-read_request_begin_vc = 0;
-read_request_end_vc = 0;
-write_request_begin_vc = 0;
-write_request_end_vc = 0;
-read_reply_begin_vc = 0;
-read_reply_end_vc = 0;
-write_reply_begin_vc = 0;
-write_reply_end_vc = 0;
+read_request_begin_vc  = 0;  read_request_end_vc  = 0;
+write_request_begin_vc = 0;  write_request_end_vc = 0;
+read_reply_begin_vc    = 0;  read_reply_end_vc    = 0;
+write_reply_begin_vc   = 0;  write_reply_end_vc   = 0;
 
-read_request_size = 1;
-read_reply_size = 9;
-write_request_size = 9;
-write_reply_size = 1;
+read_request_size  = 1;
+read_reply_size    = 1;
+write_request_size = 1;
+write_reply_size   = 1;
 
 // Simulation
 injection_process = gpu_bernoulli;
-injection_rate = 0.001;
-latency_thres = 50000.0;
+injection_rate    = 0.001;
+latency_thres     = 50000.0;
 
-sim_type = throughput;
-sim_count = 1;
+sim_type      = throughput;
+sim_count     = 1;
 sample_period = 10000;
-max_samples = 10;
+max_samples   = 10;
 warmup_periods = 3;
+
+// Trace Config
+trace_flit_routes = 1;
+trace_flit_max = 200;

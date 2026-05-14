@@ -266,15 +266,14 @@ BookSimConfig::BookSimConfig( )
   _int_map["seed"]            = 0; //random seed for simulation, e.g. traffic 
 
   _int_map["print_activity"] = 0;
-
   _int_map["print_csv_results"] = 0;
-
   _int_map["deadlock_warn_timeout"] = 1024;
-
   _int_map["viewer_trace"] = 0;
 
+  _int_map["trace_flit_routes"] = 0;
+  _int_map["trace_flit_max"] = 100;
+
   AddStrField("watch_file", "");
-  
   AddStrField("watch_flits", "");
   AddStrField("watch_packets", "");
   AddStrField("watch_transactions", "");
@@ -312,21 +311,33 @@ BookSimConfig::BookSimConfig( )
   //==================Network file===========================
   AddStrField("network_file","");
 
-  _int_map["l"] = 1;
-  _int_map["shader"] = 144;
-  _int_map["l2slice"] = 80;
-  _int_map["units"] = 144;
+  // GPUNet topology parameters
+  _int_map["l"] = 0;       // SM-side intermediate hierarchy levels
+  _int_map["l2_l"] = 0;    // L2-side intermediate hierarchy levels
+  _int_map["n_sm"] = 108;  // total number of SM (shader) nodes
+  _int_map["n_l2"] = 160;  // total number of L2 slice nodes
+  // units[i]: concentration ratio at SM-side level i
+  //   i=0: SMs per TPC, i=1: TPCs per GPC, ...
   AddStrField("units", "");
+  // ports[i]: parallel physical ports on SM-side link from level i upward
+  //   i=0: TPC->GPC ports, i=1: GPC->Crossbar ports, ...
+  AddStrField("ports", "");
+  // l2_units[i]: concentration ratio at L2-side level i
+  //   i=0: L2 nodes per L2Slice, i=1: L2Slices per upper group, ...
+  AddStrField("l2_units", "");
+  // l2_ports[i]: parallel physical ports on L2-side link from level i upward
+  //   i=0: L2Node->L2Slice ports, i=1: L2Slice->Crossbar ports, ...
+  AddStrField("l2_ports", "");
   _int_map["use_partition"] = 0;
-  _int_map["n_partition"] = 1;
-  
-
-  _int_map["speedups"] = 1;
-  AddStrField("speedups", "");
-  _int_map["interpartition_speedup"] = 1;
+  _int_map["n_partition"] = 2;
   _int_map["interpartition_ports"] = 1;
-  _int_map["inject_eject_latency"] = 40;
+  // latency[i]: wire latency (cycles) on SM-side link at level i
+  AddStrField("latency", "");
+  // l2_latency[i]: wire latency (cycles) on L2-side link at level i
+  AddStrField("l2_latency", "");
   _int_map["interpartition_latency"] = 50;
+  _int_map["inj_lat"] = 1;  // injection latency
+  _int_map["ej_lat"] = 1;   // ejection latency
 }
 
 

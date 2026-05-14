@@ -32,7 +32,7 @@
 #include "gputrafficmanager.hpp"
 #include "interconnect_interface.hpp"
 #include "globals.hpp"
-
+#include "networks/gpunet.hpp"
 
 GPUTrafficManager::GPUTrafficManager( const Configuration &config, const vector<Network *> &net)
 :TrafficManager(config, net)
@@ -83,6 +83,29 @@ void GPUTrafficManager::_RetireFlit( Flit *f, int dest )
     << ", hops = " << f->hops
     << ", flat = " << f->atime - f->itime
     << ")." << endl;
+  }
+
+  static int traced_flits_count = 0;
+  if ((_trace_flit_routes == 1 && traced_flits_count < _trace_flit_max) || (_trace_flit_routes == 2 && f->watch)) {
+    if (_trace_flit_routes == 1) traced_flits_count++;
+    
+    auto format_node = [](int node) {
+      if (node < gNSM) return "SM " + to_string(node) + " (Part " + to_string(node / gSMPerPart) + ")";
+      else {
+        int l2 = node - gNSM;
+        return "L2 " + to_string(l2) + " (Part " + to_string(l2 / gL2PerPart) + ")";
+      }
+    };
+    
+    cout << "[TRACE] Flit " << f->id 
+         << " | Src: " << format_node(f->src) 
+         << " | Dest: " << format_node(f->dest) 
+         << " | Hops: " << f->hops 
+         << " | Latency: " << (f->atime - f->itime) << " cycles | Route: ";
+    for (size_t i = 0; i < f->route_trace.size(); i++) {
+      cout << f->route_trace[i] << " -> ";
+    }
+    cout << "End" << endl;
   }
   
   if ( f->head && ( f->dest != dest ) ) {

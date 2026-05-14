@@ -33,6 +33,8 @@
 
 #include "booksim.hpp"
 #include "outputset.hpp"
+#include <string>
+#include <vector>
 
 class Flit {
 
@@ -79,6 +81,9 @@ public:
 
   // Fields for arbitrary data
   void* data ;
+
+  // Route trace: sequence of router names visited
+  vector<string> route_trace;
 
   // Lookahead route info
   OutputSet la_route_set;

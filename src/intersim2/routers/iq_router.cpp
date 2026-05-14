@@ -1076,6 +1076,7 @@ void IQRouter::_SWHoldUpdate( )
 
       _bufferMonitor->read(input, f) ;
       
+      f->route_trace.push_back(this->FullName());
       f->hops++;
       f->vc = match_vc;
       
@@ -1986,6 +1987,7 @@ void IQRouter::_SWAllocUpdate( )
 
       _bufferMonitor->read(input, f) ;
 
+      f->route_trace.push_back(this->FullName());
       f->hops++;
       f->vc = match_vc;
 

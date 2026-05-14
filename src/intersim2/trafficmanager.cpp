@@ -39,6 +39,7 @@
 #include "random_utils.hpp" 
 #include "vc.hpp"
 #include "packet_reply_info.hpp"
+#include "networks/gpunet.hpp"
 
 TrafficManager * TrafficManager::New(Configuration const & config,
                                      vector<Network *> const & net)
@@ -350,6 +351,10 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     _include_queuing = config.GetInt( "include_queuing" );
 
     _print_csv_results = config.GetInt( "print_csv_results" );
+
+    _trace_flit_routes = config.GetInt("trace_flit_routes");
+    _trace_flit_max = config.GetInt("trace_flit_max");
+    _deadlock_timer = 0;
     _deadlock_warn_timeout = config.GetInt( "deadlock_warn_timeout" );
 
     string watch_file = config.GetStr( "watch_file" );
@@ -1263,6 +1268,7 @@ void TrafficManager::_Step( )
     }
 
     ++_time;
+    gpunet_tick();
     assert(_time);
     if(gTrace){
         cout<<"TIME "<<_time<<endl;
@@ -1687,6 +1693,8 @@ bool TrafficManager::Run( )
     if(_print_csv_results) {
         DisplayOverallStatsCSV();
     }
+    
+    gpunet_print_link_stats();
   
     return true;
 }

@@ -80,6 +80,7 @@ void Flit::Reset()
   intm =-1;
   ph = -1;
   data = 0;
+  route_trace.clear();
 }  
 
 Flit * Flit::New() {

@@ -48,7 +48,6 @@
 #include "anynet.hpp"
 #include "dragonfly.hpp"
 #include "gpunet.hpp"
-#include "gpunet_multiport.hpp"
 
 
 Network::Network( const Configuration &config, const string & name ) :
@@ -116,9 +115,6 @@ Network * Network::New(const Configuration & config, const string & name)
   } else if ( topo == "gpunet"){
     GPUNet::RegisterRoutingFunctions() ;
     n = new GPUNet(config, name);
-  } else if ( topo == "gpunet_multiport"){
-    GPUNetMultiport::RegisterRoutingFunctions() ;
-    n = new GPUNetMultiport(config, name);
   } else {
     cerr << "Unknown topology: " << topo << endl;
   }

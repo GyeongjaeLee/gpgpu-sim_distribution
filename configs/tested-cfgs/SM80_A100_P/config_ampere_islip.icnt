@@ -1,0 +1,110 @@
+// A100 (SM80) GPU on-chip network configuration
+// Uses gpunet: hierarchical partitioned crossbar topology
+//
+// Node counts (must match gpgpusim.config):
+//   n_sm = gpgpu_n_clusters                             = 108
+//   n_l2 = gpgpu_n_mem * gpgpu_n_sub_partition_per_mchannel = 40 * 4 = 160
+//
+// A100 SM-side hierarchy per partition (54 SMs):
+//   SM -> TPC (2 SM/TPC = 27 TPCs) -> GPC (7 TPC/GPC = 4 GPCs, ceil) -> Crossbar
+//
+// A100 L2-side hierarchy per partition (160 L2 nodes):
+//   L2Node -> L2Slice (2 node/Slice = 80 Slices) -> Crossbar
+
+// Required by intersim interface
+use_map  = 0;
+flit_size = 40;
+
+// Topology
+topology         = gpunet;
+routing_function = hierarchical;
+
+// Total network nodes
+n_sm = 108;   // SM clusters (gpgpu_n_clusters)
+n_l2 = 160;    // L2 sub-partitions (gpgpu_n_mem * gpgpu_n_sub_partition_per_mchannel)
+
+// SM-side hierarchy: 2 levels (TPC, GPC)
+//   units[0]=2: 2 SMs per TPC
+//   units[1]=7: 7 TPCs per GPC (last GPC: 6 TPCs)
+l     = 2;
+units = {2, 7};
+
+// Parallel ports per SM-side upward link
+//   ports[0]=2: TPC -> GPC
+//   ports[1]=12: GPC -> Crossbar
+ports = {2, 12};
+
+// Wire latency (cycles) per SM-side link level
+//   latency[0]: TPC -> GPC
+//   latency[1]: GPC -> Crossbar
+latency = {10, 25};
+
+// L2-side hierarchy: 1 level (L2Slice)
+//   l2_units[0]=2: 2 L2 nodes per L2Slice
+l2_l     = 1;
+l2_units = {2};
+
+// Parallel ports per L2-side upward link
+//   l2_ports[0]=2: L2Node -> L2Slice -> Crossbar
+l2_ports = {2};
+
+// Wire latency (cycles) per L2-side link level
+//   l2_latency[0]: L2Node -> L2Slice -> Crossbar
+l2_latency = {25};
+
+// Partition: 2 crossbars connected by interpartition links
+use_partition          = 1;
+n_partition            = 2;
+interpartition_ports   = 14;   
+interpartition_latency = 75;
+
+inj_lat = 10;
+ej_lat = 10;
+
+// Router architecture
+router       = iq;
+vc_allocator = islip;
+sw_allocator = islip;
+alloc_iters  = 1;
+
+credit_delay   = 0;
+routing_delay  = 0;
+vc_alloc_delay = 1;
+sw_alloc_delay = 1;
+
+input_speedup    = 1;
+output_speedup   = 1;
+internal_speedup = 2.0;
+
+// Flow control
+num_vcs      = 1;
+vc_buf_size  = 256;
+input_buffer_size    = 256;
+ejection_buffer_size = 512;
+boundary_buffer_size = 512;
+
+wait_for_tail_credit = 0;
+
+// Trace Config
+trace_flit_routes = 1;
+trace_flit_max = 200;
+
+// Subnets: 0 = request (SM->L2), 1 = reply (L2->SM)
+subnets = 2;
+
+read_request_subnet  = 0;
+read_reply_subnet    = 1;
+write_request_subnet = 0;
+write_reply_subnet   = 1;
+
+read_request_begin_vc  = 0;  read_request_end_vc  = 0;
+write_request_begin_vc = 0;  write_request_end_vc = 0;
+read_reply_begin_vc    = 0;  read_reply_end_vc    = 0;
+write_reply_begin_vc   = 0;  write_reply_end_vc   = 0;
+
+// Simulation mode (gpgpusim integration)
+sim_type = gpgpusim;
+
+traffic = uniform;
+packet_size = {{1,2,3,4},{10,20}};
+packet_size_rate = {{1,1,1,1},{2,1}};
