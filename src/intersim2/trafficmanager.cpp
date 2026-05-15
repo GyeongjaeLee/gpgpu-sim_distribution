@@ -1694,8 +1694,6 @@ bool TrafficManager::Run( )
         DisplayOverallStatsCSV();
     }
     
-    gpunet_print_link_stats();
-  
     return true;
 }
 
@@ -2082,6 +2080,8 @@ void TrafficManager::DisplayStats(ostream & os) const {
 #endif
     
     }
+    
+    gpunet_print_link_stats();
 }
 
 void TrafficManager::DisplayOverallStats( ostream & os ) const {

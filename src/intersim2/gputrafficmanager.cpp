@@ -694,6 +694,7 @@ void GPUTrafficManager::_Step()
   }
   
   ++_time;
+  gpunet_tick();
   assert(_time);
   if(gTrace){
     cout<<"TIME "<<_time<<endl;

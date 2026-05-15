@@ -37,7 +37,7 @@ ports = {2,12};
 // Wire latency (cycles) per SM-side link level
 //   latency[0]: TPC -> GPC
 //   latency[1]: GPC -> Crossbar
-latency = {10,25};
+latency = {10,20};
 
 // L2-side hierarchy: 1 level (L2Slice)
 //   l2_units[0]=2: 2 L2 nodes per L2Slice
@@ -50,7 +50,7 @@ l2_ports = {2};
 
 // Wire latency (cycles) per L2-side link level
 //   l2_latency[0]: L2Node -> L2Slice -> Crossbar
-l2_latency = {25};
+l2_latency = {20};
 
 // Partition: 2 crossbars connected by interpartition links
 use_partition          = 1;

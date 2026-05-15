@@ -654,42 +654,104 @@ static string GetLinkDirectionString(int src_r, int dst_r) {
   return "Unknown";
 }
 
+// Helper to get descriptive router name from router ID
+static string GetRouterName(int router_id) {
+  int part = router_id / gRoutersPerPartition;
+  int off = router_id % gRoutersPerPartition;
+  char buf[64];
+
+  for (int i = 0; i < gL; i++) {
+    if (off >= gSmOffsets[i] && off < gSmOffsets[i] + gSmTotal[i]) {
+      snprintf(buf, sizeof(buf), "SM_P%d_L%d[%d]", part, i,
+               off - gSmOffsets[i]);
+      return buf;
+    }
+  }
+  if (off == gXbarOffset) {
+    snprintf(buf, sizeof(buf), "Xbar_P%d", part);
+    return buf;
+  }
+  for (int i = 0; i < gL2L; i++) {
+    if (off >= gL2Offsets[i] && off < gL2Offsets[i] + gL2Total[i]) {
+      snprintf(buf, sizeof(buf), "L2_P%d_L%d[%d]", part, i,
+               off - gL2Offsets[i]);
+      return buf;
+    }
+  }
+  snprintf(buf, sizeof(buf), "R%d", router_id);
+  return buf;
+}
+
+// Helper to get number of parallel ports between two routers
+static int GetParallelPorts(int src_r, int dst_r) {
+  int src_part = src_r / gRoutersPerPartition;
+  int dst_part = dst_r / gRoutersPerPartition;
+  int src_off = src_r % gRoutersPerPartition;
+  int dst_off = dst_r % gRoutersPerPartition;
+
+  if (src_part != dst_part) return gInterpartitionPorts;
+
+  int src_side = -1, src_level = -1;
+  int dst_side = -1, dst_level = -1;
+
+  for (int i = 0; i < gL; i++) {
+    if (src_off >= gSmOffsets[i] && src_off < gSmOffsets[i] + gSmTotal[i]) {
+      src_side = 0;
+      src_level = i;
+    }
+    if (dst_off >= gSmOffsets[i] && dst_off < gSmOffsets[i] + gSmTotal[i]) {
+      dst_side = 0;
+      dst_level = i;
+    }
+  }
+  if (src_off == gXbarOffset) src_side = 1;
+  if (dst_off == gXbarOffset) dst_side = 1;
+  for (int i = 0; i < gL2L; i++) {
+    if (src_off >= gL2Offsets[i] && src_off < gL2Offsets[i] + gL2Total[i]) {
+      src_side = 2;
+      src_level = i;
+    }
+    if (dst_off >= gL2Offsets[i] && dst_off < gL2Offsets[i] + gL2Total[i]) {
+      dst_side = 2;
+      dst_level = i;
+    }
+  }
+
+  // SM tree links
+  if (src_side == 0 && dst_side == 0)
+    return gPorts[min(src_level, dst_level)];
+  if ((src_side == 0 && dst_side == 1) || (src_side == 1 && dst_side == 0))
+    return gPorts[gL - 1];
+  // L2 tree links
+  if (src_side == 2 && dst_side == 2)
+    return gL2Ports[min(src_level, dst_level)];
+  if ((src_side == 2 && dst_side == 1) || (src_side == 1 && dst_side == 2))
+    return gL2Ports[gL2L - 1];
+
+  return 1;
+}
+
 void gpunet_count_link_traversal(int src_router, int dst_router) {
   pair<int, int> p(src_router, dst_router);
 
   if (gLinkMapGlobal.find(p) == gLinkMapGlobal.end()) {
     string global_dir = GetLinkDirectionString(src_router, dst_router);
-    // Since we don't know router names here without pointer, we rely on the
-    // caller or just print IDs
-    char local_name[128];
-    snprintf(local_name, sizeof(local_name), "R%d -> R%d", src_router,
-             dst_router);
-    string local_dir = local_name;
+    string local_dir =
+        GetRouterName(src_router) + " -> " + GetRouterName(dst_router);
+    int n_ports = GetParallelPorts(src_router, dst_router);
 
     gLinkMapGlobal[p] = global_dir;
     gLinkMapLocal[p] = local_dir;
 
-    // Increment port_count dynamically (each unique src->dst channel that is
-    // traversed increments port_count if we assume each call for a NEW pair is
-    // a distinct port... Wait, src->dst ID is unique per pair, but there might
-    // be multiple ports. Actually, src_router and dst_router IDs uniquely
-    // identify the PAIR of routers. Parallel ports have the SAME src and dst
-    // router IDs. If we just count traversals between Router A and Router B,
-    // and divide by gGPUNetCycles, we get flits/cycle between those two
-    // routers. To get flits/cycle/port, we need to know the number of parallel
-    // ports. This is complex to fetch dynamically. We can just print
-    // "flits/cycle" and leave it as total bandwidth between the two entities!
-    // This is much more accurate and less prone to division errors.
-    if (gLinkStatsGlobal.find(global_dir) == gLinkStatsGlobal.end()) {
-      gLinkStatsGlobal[global_dir].port_count = 1;  // Used as a dummy divisor
-    }
-    if (gLinkStatsLocal.find(local_dir) == gLinkStatsLocal.end()) {
-      gLinkStatsLocal[local_dir].port_count = 1;
-    }
+    if (gLinkStatsGlobal.find(global_dir) == gLinkStatsGlobal.end())
+      gLinkStatsGlobal[global_dir].port_count = 0;
+    gLinkStatsGlobal[global_dir].port_count += n_ports;
+
+    gLinkStatsLocal[local_dir].port_count = n_ports;
   }
 
-  string global_dir = gLinkMapGlobal[p];
-  string local_dir = gLinkMapLocal[p];
+  string& global_dir = gLinkMapGlobal[p];
+  string& local_dir = gLinkMapLocal[p];
 
   gLinkStatsGlobal[global_dir].total++;
   gLinkStatsGlobal[global_dir].window++;
@@ -699,34 +761,66 @@ void gpunet_count_link_traversal(int src_router, int dst_router) {
 }
 
 void gpunet_print_link_stats() {
-  cout << "===================================================================="
-          "===="
-       << endl;
+  cout << "========================================================================"
+          "================================" << endl;
   cout << " GPUNet Link Utilization Statistics (Total Cycles: " << gGPUNetCycles
        << ")" << endl;
-  cout << "===================================================================="
-          "===="
-       << endl;
+  cout << "========================================================================"
+          "================================" << endl;
 
-  cout << "--- GLOBAL DIRECTION STATS ---" << endl;
+  // --- Global direction stats ---
+  cout << "\n--- GLOBAL DIRECTION STATS ---" << endl;
+  cout << left << setw(22) << "Direction"
+       << right << setw(7) << "Ports"
+       << " | " << setw(10) << "Avg f/c"
+       << setw(10) << "Avg %"
+       << " | " << setw(12) << "Peak f/c"
+       << setw(10) << "Peak %" << endl;
+  cout << string(75, '-') << endl;
+
   for (auto const& kv : gLinkStatsGlobal) {
-    double avg = (double)kv.second.total / gGPUNetCycles;
-    cout << " [Global] " << left << setw(20) << kv.first << " | Avg: " << fixed
-         << setprecision(4) << avg << " flits/cycle"
-         << " | Peak (" << gGPUNetWindow << "c): " << kv.second.peak
-         << " flits/cycle" << endl;
+    int ports = kv.second.port_count;
+    double avg_fc = (gGPUNetCycles > 0)
+                        ? (double)kv.second.total / gGPUNetCycles
+                        : 0.0;
+    double avg_pct = (ports > 0) ? avg_fc / ports * 100.0 : 0.0;
+    double peak_fc = kv.second.peak * ports;  // peak is stored per-port
+    double peak_pct = kv.second.peak * 100.0;
+
+    cout << left << setw(22) << kv.first
+         << right << setw(7) << ports << " | " << fixed << setprecision(4)
+         << setw(10) << avg_fc << setprecision(2) << setw(9) << avg_pct << "%"
+         << " | " << setprecision(4) << setw(12) << peak_fc << setprecision(2)
+         << setw(9) << peak_pct << "%" << endl;
   }
 
+  // --- Local router-to-router stats ---
   cout << "\n--- LOCAL ROUTER-TO-ROUTER STATS ---" << endl;
+  cout << left << setw(42) << "Link"
+       << right << setw(5) << "Ports"
+       << " | " << setw(10) << "Avg f/c"
+       << setw(10) << "Avg %"
+       << " | " << setw(12) << "Peak f/c"
+       << setw(10) << "Peak %" << endl;
+  cout << string(95, '-') << endl;
+
   for (auto const& kv : gLinkStatsLocal) {
-    if (kv.second.total == 0) continue;  // skip unused
-    double avg = (double)kv.second.total / gGPUNetCycles;
-    cout << " [Local] " << left << setw(20) << kv.first << " | Avg: " << fixed
-         << setprecision(4) << avg << " flits/cycle"
-         << " | Peak (" << gGPUNetWindow << "c): " << kv.second.peak
-         << " flits/cycle" << endl;
+    if (kv.second.total == 0) continue;
+    int ports = kv.second.port_count;
+    double avg_fc = (gGPUNetCycles > 0)
+                        ? (double)kv.second.total / gGPUNetCycles
+                        : 0.0;
+    double avg_pct = (ports > 0) ? avg_fc / ports * 100.0 : 0.0;
+    double peak_fc = kv.second.peak * ports;
+    double peak_pct = kv.second.peak * 100.0;
+
+    cout << left << setw(42) << kv.first
+         << right << setw(5) << ports << " | " << fixed << setprecision(4)
+         << setw(10) << avg_fc << setprecision(2) << setw(9) << avg_pct << "%"
+         << " | " << setprecision(4) << setw(12) << peak_fc << setprecision(2)
+         << setw(9) << peak_pct << "%" << endl;
   }
-  cout << "===================================================================="
-          "===="
-       << endl;
+
+  cout << "========================================================================"
+          "================================" << endl;
 }
